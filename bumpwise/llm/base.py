@@ -27,6 +27,6 @@ class LLMResponse:
 class LLMClient(Protocol):
     """LLM客户端接口"""
 
-    def send(self, system: str, tools: list[dict], messages: list[dict]) -> LLMResponse:
+    def create(self, system: str, tools: list[dict], messages: list[dict]) -> LLMResponse:
         """调用一次模型。tools 和 messages 都使用内部格式。"""
         ...
