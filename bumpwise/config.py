@@ -31,7 +31,7 @@ PROVIDERS: dict[str, ProviderProfile] = {
     "deepseek-openai": ProviderProfile(
         api_key_env="DEEPSEEK_API_KEY",
         base_url_env="DEEPSEEK_OPENAI_BASE_URL",
-        default_model="deepseek-flash"
+        default_model="deepseek-flash",
         api_format="openai"
     )
 }
