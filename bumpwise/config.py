@@ -57,7 +57,7 @@ class Settings:
         """从项目根目录的 .env 和环境变量中读取配置"""
         load_dotenv(PROJECT_ROOT / ".env")
 
-        provider = os.getenv("LLM_PROVIDER").strip().lower()
+        provider = os.getenv("LLM_PROVIDER", "").strip().lower()
         if provider not in PROVIDERS:
             supported = ", ".join(PROVIDERS)
             raise RuntimeError(
@@ -82,7 +82,7 @@ class Settings:
             api_format=profile.api_format,
             api_key=api_key,
             base_url=base_url,
-            model=os.getenv("LLM_MODEL", profile.default_model),
+            model=os.getenv("LLM_MODEL") or profile.default_model,
             max_turns=int(os.getenv("BUMPWISE_MAX_TURNS", "40")),
         )
 
