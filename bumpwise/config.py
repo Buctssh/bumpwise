@@ -23,11 +23,17 @@ class ProviderProfile:
 
 
 PROVIDERS: dict[str, ProviderProfile] = {
-    "deepseek": ProviderProfile(
+    "deepseek-anthropic": ProviderProfile(
         api_key_env="DEEPSEEK_API_KEY",
-        base_url_env="DEEPSEEK_BASE_URL",
+        base_url_env="DEEPSEEK_ANTHROPIC_BASE_URL",
         default_model="deepseek-flash"
     ),
+    "deepseek-openai": ProviderProfile(
+        api_key_env="DEEPSEEK_API_KEY",
+        base_url_env="DEEPSEEK_OPENAI_BASE_URL",
+        default_model="deepseek-flash"
+        api_format="openai"
+    )
 }
 
 
