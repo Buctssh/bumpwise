@@ -14,7 +14,7 @@ class AnthropicClient:
 
         self._client = anthropic.Anthropic(
             api_key=settings.api_key,
-            base_url=settings.api_base_url,
+            base_url=settings.base_url,
             max_retries=settings.llm_max_retries,
             timeout=settings.llm_timeout
         )
