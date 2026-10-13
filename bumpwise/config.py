@@ -50,6 +50,8 @@ class Settings:
     max_turns: int = 40                         # 一次任务最多调用模型多少次,防止无限循环
     command_timeout: int = 60                   # 执行一个命令的超时时间,单位秒
     max_output_chars: int = 20_000              # 工具返回模型的内容最多多少字符,超出就截断
+    llm_max_retries: int = 3                    # 调用模型失败时，SDK 自动重试的次数
+    llm_timeout: float = 300.0                  # 调用模型一次的超时时间，单位秒
     runs_dir: Path = PROJECT_ROOT / "runs"  
 
     @classmethod
