@@ -10,7 +10,7 @@ class ExecResult:
 
     exit_code: int | None       # 退出码,超时被终止时为 None
     output: str                 # 标准输出和错误输出合并后的完整内容
-    time_out: bool              # 是否超时被终止
+    timed_out: bool             # 是否超时被终止
     duration_s: float           # 耗时(秒)
 
 
