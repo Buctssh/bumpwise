@@ -53,19 +53,10 @@ def test_exec_timeout_kills_whole_process_tree(env, tmp_path):
     assert not (tmp_path / "late.txt").exists()
 
 
-def _console_attached() -> bool:
-    # Windows 上 Ctrl+Break 只能发给和当前进程共用同一个控制台的进程组；
-    # 在没有控制台的环境里（比如某些 IDE 或后台任务）信号送不到，这条测试没有意义
-    if sys.platform != "win32":
-        return True
-    import ctypes
-
-    return bool(ctypes.windll.kernel32.GetConsoleWindow())
-
-
-@pytest.mark.skipif(not _console_attached(), reason="Windows 上发送 Ctrl+Break 需要当前进程连接着控制台")
 def test_exec_timeout_lets_process_clean_up(env, tmp_path):
     # 程序自己处理中断信号：两阶段终止时能打印 cleaned-up，直接强制终止则不能
+    # 注意要分多次短暂 sleep：Windows 上一次长的 time.sleep() 只会被 Ctrl+C 唤醒，
+    # 收到 Ctrl+Break 时处理函数要等 sleep 结束才执行，那时进程早已被强制终止
     (tmp_path / "graceful.py").write_text(
         "import signal, sys, time\n"
         "def handler(*_):\n"
@@ -75,7 +66,8 @@ def test_exec_timeout_lets_process_clean_up(env, tmp_path):
         "if hasattr(signal, 'SIGBREAK'):\n"
         "    signal.signal(signal.SIGBREAK, handler)\n"
         "print('started', flush=True)\n"
-        "time.sleep(30)\n",
+        "for _ in range(300):\n"
+        "    time.sleep(0.1)\n",
         encoding="utf-8",
     )
     result = env.exec("python graceful.py", timeout=2)
