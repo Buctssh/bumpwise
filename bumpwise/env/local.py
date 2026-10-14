@@ -158,6 +158,7 @@ def _interrupt(proc: subprocess.Popen) -> None:
     """向整组进程发送"请求中断"的信号
     POSIX: SIGINT 等价 Ctrl+C:Windows: CTRL_BREAK_EVENT
     程序可以捕获这个信号,执行清理、flush日志、保存状态后退出
+    但是在windows中阻塞不会被打断,必须等调用自己返回尽力而为，很可能来不及
     """
     try:
         if sys.platform == "win32":
