@@ -16,7 +16,7 @@ _SECRET_MARKERS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD")
 _GRACE_SECONDS = 5  # 请求中断后的宽限期（秒）
 
 
-class LocalEnviroment:
+class LocalEnvironment:
     """在本机目录中运行的环境"""
 
     # workdir: 仓库的根目录

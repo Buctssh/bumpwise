@@ -18,7 +18,7 @@ class PathOutsideWorkdir(Exception):
     """路径不在工作目录下"""
 
 
-class Enviroment(Protocol):
+class Environment(Protocol):
     """一个可以执行命令,读写文件的运行环境"""
 
     @property
