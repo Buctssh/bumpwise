@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from bumpwise.env import LocalEnvironment
-from bumpwise.tools.base import Tool, ToolContext, ToolError, ToolRegistry
+from bumpwise.tools.base import Tool, ToolContext, ToolError, ToolParams, ToolRegistry
 
 
-class GreetParams(BaseModel):
+class GreetParams(ToolParams):
     name: str = Field(description="要打招呼的人")
     times: int = Field(1, ge=1, description="重复几次")
 
@@ -89,3 +89,15 @@ def test_schema_comes_from_params_model(registry):
     assert props["name"]["description"] == "要打招呼的人"
     assert props["times"]["minimum"] == 1
     assert schema["input_schema"]["required"] == ["name"]
+
+
+def test_unknown_param_is_rejected(registry, ctx):
+    # 模型拼错参数名（timse）时要明确报错，而不是悄悄忽略、退回默认值
+    result = registry.execute("greet", {"name": "bob", "timse": 3}, ctx)
+    assert result.is_error is True
+    assert "timse" in result.content
+
+
+def test_schema_forbids_additional_properties(registry):
+    (schema,) = registry.schemas()
+    assert schema["input_schema"]["additionalProperties"] is False
