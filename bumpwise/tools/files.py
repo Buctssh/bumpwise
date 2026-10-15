@@ -20,7 +20,7 @@ def _outside_message(path: str) -> str:
 
 # 负责将 env 抛出的目录而非文件异常，翻译成给模型看的提示
 def _directory_message(path: str) -> str:
-    return f"{path} 是一个目录，不是文件。可以用 run 工具执行 git ls-files {path} 查看目录里的文件。"
+    return f"{path} 是一个目录，不是文件。可以用 run_command 工具执行 git ls-files {path} 查看目录里的文件。"
 
 
 # 存在就读，不存在返回 None，不报错
@@ -40,7 +40,7 @@ def _read_existing(ctx: ToolContext, path: str) -> bytes:
     """读取一个必须存在的文件"""
     data = _read_if_exists(ctx, path)
     if data is None:
-        raise ToolError(f"文件不存在：{path}。可以用 run 工具执行 git ls-files 查看仓库里有哪些文件。")
+        raise ToolError(f"文件不存在：{path}。可以用 run_command 工具执行 git ls-files 查看仓库里有哪些文件。")
     return data
 
 
