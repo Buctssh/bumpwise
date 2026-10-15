@@ -83,6 +83,22 @@ def test_write_then_read(env):
     assert env.read_bytes("a/b/c.txt") == b"hello\r\n"  # 原样读写，换行符不变
 
 
+def test_write_leaves_no_temp_file(env, tmp_path):
+    # 原子写入用的临时文件，替换完成后不应该残留
+    env.write_bytes("m.py", b"old")
+    env.write_bytes("m.py", b"new")
+    assert env.read_bytes("m.py") == b"new"
+    assert [p.name for p in tmp_path.iterdir()] == ["m.py"]
+
+
+def test_failed_write_leaves_no_temp_file(env, tmp_path):
+    # pkg 是一个目录，用文件替换它会失败；失败时临时文件也要被删掉
+    env.write_bytes("pkg/x.py", b"")
+    with pytest.raises(OSError):
+        env.write_bytes("pkg", b"data")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["pkg"]
+
+
 def test_read_missing_file(env):
     with pytest.raises(FileNotFoundError):
         env.read_bytes("no_such_file.txt")
