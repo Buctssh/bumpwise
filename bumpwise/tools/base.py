@@ -4,9 +4,20 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ..env import Environment
+
+
+# 所有工具参数的基类：不允许出现未定义的参数（extra="forbid"）。
+# pydantic 默认会悄悄忽略多余的参数，模型把 start_line 拼成 strat_line 时，
+# 这个参数会被丢掉、退回默认值，模型却以为自己设置成功了，很容易陷入循环。
+# 禁止之后，模型会收到“参数不合法”的提示；生成的 JSON Schema 里也会带上
+# "additionalProperties": false，模型在调用之前就能知道这条规则。
+class ToolParams(BaseModel):
+    """工具参数的基类：不允许出现未定义的参数"""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 @dataclass(frozen=True)
