@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import locale
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -52,7 +53,21 @@ class LocalEnvironment:
     def write_bytes(self, path: str, data: bytes) -> None:
         target = self._resolve(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        # 原子写入：先把完整内容写进同一目录下的临时文件，再用 os.replace 一次性替换目标文件。
+        # os.replace 在同一个磁盘上只是一次重命名，要么完全成功，要么完全没发生，
+        # 所以即使写到一半时进程被终止，目标文件也不会只剩下半截。
+        # 临时文件必须和目标文件在同一个目录：跨磁盘的“重命名”实际上是复制，就不是原子的了
+        tmp = target.with_name(f".{target.name}.bumpwise-tmp")
+        try:
+            tmp.write_bytes(data)
+            # 新建的临时文件是默认权限，目标文件原来的权限（比如 Linux 上的可执行位）要复制过来
+            if target.is_file():
+                shutil.copymode(target, tmp)
+            os.replace(tmp, target)
+        except BaseException:
+            # 任何一步失败（包括 Ctrl+C 产生的 KeyboardInterrupt）都删掉临时文件，不留垃圾，再把错误抛出去
+            tmp.unlink(missing_ok=True)
+            raise
 
     # -----------------------------------------------命令
 
