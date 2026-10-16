@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 import locale
 import os
 import shutil
@@ -9,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from .base import ExecResult, PathOutsideWorkdir
+from .base import EnvironmentInfo, ExecResult, PathOutsideWorkdir
 
 
 # 环境变量名里包含这些词的，一律不传给子进程。
@@ -118,6 +119,11 @@ class LocalEnvironment:
             timed_out=timed_out,                                # 是否超时标记
             duration_s=time.monotonic() - start,                # 总耗时（前面start=time.monotonic()）
         )
+
+    def describe(self) -> EnvironmentInfo:
+        if sys.platform == "win32":
+            return EnvironmentInfo(os_name="Windows", shell="cmd.exe")
+        return EnvironmentInfo(os_name=platform.system() or sys.platform, shell="/bin/sh")
 
     def close(self) -> None:
         # 本地环境没有需要释放的资源。工作目录要不要删除，由调用方决定
