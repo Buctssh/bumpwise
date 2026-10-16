@@ -81,12 +81,12 @@ class ToolRegistry:
         return [tool.schema() for tool in self._tools.values()]
 
     def execute(self, name: str, raw_args: dict, ctx: ToolContext) -> ToolResult:
-        """执行一次工具调用,无论成功还是失败,都返回 ToolResult, 不会外抛出异常"""
+        """执行一次工具调用,无论成功还是失败,都返回 ToolResult, 不会向外抛出异常"""
 
         tool = self._tools.get(name)
         if tool is None:
             return ToolResult(
-                f"不存在名为 {name} 的工具,可用工具: {", ".join(self.names)}", is_error=True
+                f"不存在名为 {name} 的工具,可用工具: {', '.join(self.names)}", is_error=True
             )
 
         try:
