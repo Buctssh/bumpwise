@@ -19,7 +19,7 @@ class ProviderProfile:
     base_url_env: str | None        # 请求地址存放在哪个环境变量里, None 表示使用 SDK 的默认地址
     default_model: str              # 没有设置 LLM_MODEL 时使用的模型
 
-    api_format: str = "anthropic"  
+    api_format: str = "anthropic"  # 接口格式: anthropic 或 openai, 决定使用哪个客户端
 
 
 PROVIDERS: dict[str, ProviderProfile] = {
@@ -52,7 +52,7 @@ class Settings:
     max_output_chars: int = 20_000              # 工具返回模型的内容最多多少字符,超出就截断
     llm_max_retries: int = 3                    # 调用模型失败时，SDK 自动重试的次数
     llm_timeout: float = 300.0                  # 调用模型一次的超时时间，单位秒
-    runs_dir: Path = PROJECT_ROOT / "runs"  
+    runs_dir: Path = PROJECT_ROOT / "runs"     # 每次运行的记录保存在这里
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -85,16 +85,6 @@ class Settings:
             api_key=api_key,
             base_url=base_url,
             model=os.getenv("LLM_MODEL") or profile.default_model,
-            max_turns=int(os.getenv("BUMPWISE_MAX_TURNS", "40")),
+            # 默认值直接取字段的默认值, 不在这里重复写 40
+            max_turns=int(os.getenv("BUMPWISE_MAX_TURNS") or cls.max_turns),
         )
-
-
-
-
-
-
-
-
-
-
-

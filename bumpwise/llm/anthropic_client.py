@@ -35,4 +35,3 @@ class AnthropicClient:
             input_tokens=getattr(usage, "input_tokens", 0) or 0,
             output_tokens=getattr(usage, "output_tokens", 0) or 0
         )
-        

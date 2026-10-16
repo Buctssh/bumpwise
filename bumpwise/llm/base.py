@@ -10,8 +10,8 @@ class LLMResponse:
 
     content: list[dict[str, Any]]   # 回复的内容块
     stop_reason: str | None         # 停止的原因
-    input_tokens: int = 0          
-    output_tokens: int = 0          
+    input_tokens: int = 0           # 输入消耗的 token 数
+    output_tokens: int = 0          # 输出消耗的 token 数
 
     @property
     def tool_uses(self) -> list[dict[str, Any]]:
@@ -21,7 +21,7 @@ class LLMResponse:
     @property
     def text(self) -> str:
         """回复的文本内容"""
-        return "\n".join(block['text'] for block in self.content if block.get("type") == "text")
+        return "\n".join(block["text"] for block in self.content if block.get("type") == "text")
 
 
 class LLMClient(Protocol):
