@@ -14,8 +14,7 @@ def create_llm_client(settings: Settings) -> LLMClient:
         return AnthropicClient(settings)
 
     if settings.api_format == "openai":
-        from .openai_client import OpenAIClient
-
-        return OpenAIClient(settings)
+        # OpenAI 格式的客户端还没有实现. 明确报错, 而不是让 import 抛出一个看不懂的 ImportError
+        raise NotImplementedError("OpenAI 格式的客户端还没有实现, 请先把 LLM_PROVIDER 设置为 deepseek-anthropic")
 
     raise NotImplementedError(f"暂不支持 {settings.api_format!r} 格式的接口")
