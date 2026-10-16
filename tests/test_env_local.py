@@ -76,6 +76,22 @@ def test_exec_timeout_lets_process_clean_up(env, tmp_path):
     assert "cleaned-up" in result.output
 
 
+def test_exec_disables_interactive_prompts(env):
+    # git 和 pip 需要输入时直接失败, 而不是卡到超时
+    code = "import os; print(os.environ.get('GIT_TERMINAL_PROMPT'), os.environ.get('PIP_NO_INPUT'))"
+    result = env.exec(f'python -c "{code}"', timeout=30)
+    assert result.output.split() == ["0", "1"]
+
+
+def test_describe_reports_os_and_shell(env):
+    info = env.describe()
+    if sys.platform == "win32":
+        assert (info.os_name, info.shell) == ("Windows", "cmd.exe")
+    else:
+        assert info.shell == "/bin/sh"
+        assert info.os_name
+
+
 # ---------------------------------------------------------------- 文件
 
 def test_write_then_read(env):
