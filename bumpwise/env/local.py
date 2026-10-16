@@ -22,7 +22,7 @@ class LocalEnvironment:
     """在本机目录中运行的环境"""
 
     # workdir: 仓库的根目录
-    # python 目标仓库 venv 里的 python.exe 不传的话, 就使用系统默认的 PATH, 
+    # python: 目标仓库 venv 里的 python.exe, 不传的话就使用系统默认的 PATH
     def __init__(self, workdir: Path, python: Path | None = None) -> None:
         root = Path(workdir).resolve()
         if not root.is_dir():
@@ -37,7 +37,7 @@ class LocalEnvironment:
     # -----------------------------------------------文件
     
     def _resolve(self, path: str) -> Path:
-        # 如果path是绝对路径,直接丢弃前面
+        # path 是绝对路径时, / 会丢弃前面的根目录, 结果就是这个绝对路径本身, 下面的检查会拦住它
         target = (self._root / path).resolve()
         if not target.is_relative_to(self._root):
             raise PathOutsideWorkdir(f"路径 {path} 不在工作目录之内")
@@ -160,7 +160,7 @@ def _stop_and_collect(proc: subprocess.Popen) -> bytes:
     # 阶段1：发优雅中断信号
     _interrupt(proc)
     try:
-        # 等待优雅退出，最多 _GRACE_SECONDS（比如2~5s）
+        # 等待优雅退出，最多 _GRACE_SECONDS 秒
         out, _ = proc.communicate(timeout=_GRACE_SECONDS)
         # 在宽限期内正常退出了，再补一次 _kill_tree（防御：防止还有漏的子进程残留）
         _kill_tree(proc)
@@ -181,9 +181,10 @@ def _stop_and_collect(proc: subprocess.Popen) -> bytes:
 
 def _interrupt(proc: subprocess.Popen) -> None:
     """向整组进程发送"请求中断"的信号
-    POSIX: SIGINT 等价 Ctrl+C:Windows: CTRL_BREAK_EVENT
+    POSIX: SIGINT, 等价于 Ctrl+C; Windows: CTRL_BREAK_EVENT
     程序可以捕获这个信号,执行清理、flush日志、保存状态后退出
-    但是在windows中阻塞不会被打断,必须等调用自己返回尽力而为，很可能来不及
+    这一步是尽力而为: Windows 上正在阻塞的调用 (比如一次长的 time.sleep) 不会被它打断,
+    要等调用返回后才会处理, 可能来不及在宽限期内退出
     """
     try:
         if sys.platform == "win32":

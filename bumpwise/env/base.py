@@ -18,8 +18,8 @@ class ExecResult:
 class EnvironmentInfo:
     """运行环境的基本信息"""
 
-    os_name: str    # 操作系统, Docker 环境
-    shell: str      # exec() 用哪个 shell 执行命令, 例如 cmd.exx, /bin/sh
+    os_name: str    # 操作系统, 例如 Windows, Linux
+    shell: str      # exec() 用哪个 shell 执行命令, 例如 cmd.exe, /bin/sh
 
 
 class PathOutsideWorkdir(Exception):
@@ -35,7 +35,7 @@ class Environment(Protocol):
         ...
 
     def exec(self, command: str, timeout: float) -> ExecResult:
-        """在工作目录下执行一个命令,超时最终命令以及它启动的所有子线程"""
+        """在工作目录下执行一个命令,超时时终止命令以及它启动的所有子进程"""
         ...
 
     def read_bytes(self, path: str) -> bytes:
@@ -55,4 +55,4 @@ class Environment(Protocol):
         ...
 
     def close(self) -> None:
-        """释放环境占用的资源,本地实现什么都不做:Docker 实现会停止并删除容器"""
+        """释放环境占用的资源,本地实现什么都不做; Docker 实现会停止并删除容器"""
