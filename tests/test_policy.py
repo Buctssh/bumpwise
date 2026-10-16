@@ -45,7 +45,7 @@ def test_cannot_edit_tests(policy, path):
 
 
 def test_similar_directory_names_are_not_tests(policy):
-    # my_tests、test_utils 不是 tests 目录，也不是 test_*.py 文件
+    # my_tests, test_utils 不是 tests 目录, 也不是 test_*.py 文件
     assert policy.check("edit_file", edit("my_tests/helpers.py")).allowed
     assert policy.check("edit_file", edit("src/test_utils/helpers.py")).allowed
 
@@ -62,7 +62,7 @@ def test_cannot_write_new_test_file(policy):
     assert not policy.check("write_file", {"path": "tests/test_new.py", "content": "x"}).allowed
 
 
-# ---------------------------------------------------------------- 密钥、.git、虚拟环境
+# ---------------------------------------------------------------- 密钥, .git, 虚拟环境
 
 @pytest.mark.parametrize("path", [".env", "config/.env.local", "certs/server.pem", "deploy.key", ".pypirc"])
 def test_cannot_read_secret_files(policy, path):
@@ -79,7 +79,7 @@ def test_cannot_edit_git_or_venv(policy, path):
 
 
 def test_can_read_installed_package_source(policy):
-    # 读取 venv 里已安装的库的源代码是允许的：模型想确认新版本的某个函数怎么用时会需要
+    # 读取 venv 里已安装的库的源代码是允许的: 模型想确认新版本的某个函数怎么用时会需要
     assert policy.check("read_file", {"path": ".venv/Lib/site-packages/pydantic/main.py"}).allowed
 
 
@@ -95,7 +95,7 @@ def test_cannot_delete_target_pin(policy):
 
 
 def test_unchanged_target_line_as_context_is_allowed(policy):
-    # pydantic 那一行只是上下文，实际修改的是 requests
+    # pydantic 那一行只是上下文, 实际修改的是 requests
     old = '    "requests",\n    "pydantic>=2,<3",\n'
     new = '    "requests>=2.31",\n    "pydantic>=2,<3",\n'
     assert policy.check("edit_file", edit("pyproject.toml", old, new)).allowed
@@ -106,7 +106,7 @@ def test_can_edit_other_dependencies(policy):
 
 
 def test_similar_package_names_are_not_affected(policy):
-    # pydantic-settings、pydantic_core 是别的包，不受影响
+    # pydantic-settings, pydantic_core 是别的包, 不受影响
     assert policy.check("edit_file", edit("pyproject.toml", '"pydantic-settings>=2"', '"pydantic-settings>=2.1"')).allowed
     assert policy.check("run_command", {"command": "python -m pip install pydantic_core"}).allowed
 
@@ -128,7 +128,7 @@ def test_cannot_reinstall_target_package(policy, command):
 
 
 def test_pip_rule_does_not_cross_commands(policy):
-    # 安装 requests，再查看 pydantic 的版本：两条子命令各自都是正常的
+    # 安装 requests, 再查看 pydantic 的版本: 两条子命令各自都是正常的
     command = 'python -m pip install requests && python -c "import pydantic; print(pydantic.VERSION)"'
     assert policy.check("run_command", {"command": command}).allowed
 
@@ -145,7 +145,7 @@ def test_no_protected_packages_no_dependency_rules():
 
 @pytest.mark.parametrize("command, rule", [
     ("git push origin main", "git-push"),
-    ("python -m pytest -q && GIT   PUSH", "git-push"),   # 藏在 && 后面、大小写、多个空格
+    ("python -m pytest -q && GIT   PUSH", "git-push"),   # 藏在 && 后面, 大小写, 多个空格
     ('git commit -am "fix"', "git-commit"),
     ("git reset --hard HEAD", "git-discard"),
     ("git checkout -- .", "git-discard"),
@@ -168,10 +168,10 @@ def test_dangerous_commands_are_denied(policy, command, rule):
     "git diff",
     "git status",
     "git log --oneline -5",
-    "git checkout -b fix",     # 新建分支，不是 checkout -- 丢弃改动
+    "git checkout -b fix",     # 新建分支, 不是 checkout -- 丢弃改动
     "rg -n parse_obj src",
     "python -m pip list",
-    "pushd src",               # 包含 push，但不是 git push
+    "pushd src",               # 包含 push, 但不是 git push
 ])
 def test_normal_commands_are_allowed(policy, command):
     assert policy.check("run_command", {"command": command}).allowed
@@ -180,8 +180,8 @@ def test_normal_commands_are_allowed(policy, command):
 # ---------------------------------------------------------------- 已知的局限
 
 def test_known_bypass_is_not_caught(policy):
-    # 记录的是“已知的局限”，不是期望的行为：用一段 python 代码修改测试文件，策略拦不住。
-    # 这正是需要 V4 独立验证和 V8 沙箱的原因。如果这条测试失败了，说明策略变强了，要同步更新注释和文档
+    # 记录的是'已知的局限', 不是期望的行为: 用一段 python 代码修改测试文件, 策略拦不住.
+    # 这正是需要 V4 独立验证和 V8 沙箱的原因. 如果这条测试失败了, 说明策略变强了, 要同步更新注释和文档
     command = "python -c \"open('tests/test_x.py', 'w').write('')\""
     assert policy.check("run_command", {"command": command}).allowed
 
