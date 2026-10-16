@@ -50,6 +50,9 @@ class Environment(Protocol):
         """写入工作目录中的一个文件,上级目录不存在时会自动创建"""
         ...
 
+    def describe(self) -> EnvironmentInfo:
+        """环境的基本信息, 用于告诉模型当前的操作系统和 shell"""
+        ...
+
     def close(self) -> None:
         """释放环境占用的资源,本地实现什么都不做:Docker 实现会停止并删除容器"""
-    
