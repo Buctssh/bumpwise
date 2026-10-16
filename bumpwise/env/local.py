@@ -149,6 +149,10 @@ class LocalEnvironment:
         env["PYTHONUTF8"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
 
+        # 告诉常见工具不要等待用户输入,需要输入时直接报错退出,而不是卡住等待超时
+        env["GIT_TERMINAL_PROMPT"] = "0"        # git 需要用户名或密码时,直接失败, 不弹出输入提示
+        env["PIP_NO_INPUT"] = "1"               # pip 不再询问任何问题
+
         return env
 
 
