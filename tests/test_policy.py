@@ -26,6 +26,18 @@ def test_split_commands():
     assert split_commands("a  b && c || d; e | f") == ["a b", "c", "d", "e", "f"]
 
 
+def test_split_commands_on_single_ampersand():
+    # cmd.exe 里 a & b 会依次执行 a 和 b
+    assert split_commands("a & b") == ["a", "b"]
+
+
+def test_pip_rule_does_not_cross_single_ampersand(policy):
+    command = 'python -m pip install requests & python -c "import pydantic"'
+    assert policy.check("run_command", {"command": command}).allowed
+    command = "python -m pytest -q & pip install pydantic==1.10"
+    assert policy.check("run_command", {"command": command}).rule == "protected-package"
+
+
 # ---------------------------------------------------------------- 测试文件
 
 @pytest.mark.parametrize("path", [

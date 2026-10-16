@@ -93,15 +93,16 @@ def _name_matches(name: str, patterns: Iterable[str]) -> bool:
     return any(fnmatchcase(name, p.casefold()) for p in patterns)
 
 
-# shell 的连接符: &&, ||, ;, |, 换行
-_COMMAND_SEPARATORS = re.compile(r"&&|\|\||[;|\n]")
+# shell 的连接符: &&, ||, ;, |, &, 换行. cmd.exe 里单个 & 表示'依次执行', 和 POSIX 的 ; 一样
+_COMMAND_SEPARATORS = re.compile(r"&&|\|\||[;|&\n]")
 
 
 def split_commands(command: str) -> list[str]:
     """按 shell 连接符把一整条命令拆成子命令, 并把每条子命令里连续的空白合并成一个空格
 
     逐条检查子命令, 规则就不会把后一条命令里的内容当成前一条的参数而误伤正常命令.
-    局限: 引号里的 ; 也会被拆开 (比如 python -c "a; b"), 只会让检查更严格, 不会漏掉危险命令.
+    局限: 引号里的 ; 也会被拆开 (比如 python -c "a; b"), 2>&1 也会被拆成两段,
+    这些只会让检查更严格, 不会漏掉危险命令.
     """
     return [" ".join(part.split()) for part in _COMMAND_SEPARATORS.split(command) if part.strip()]
 
