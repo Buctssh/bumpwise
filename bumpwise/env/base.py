@@ -14,6 +14,14 @@ class ExecResult:
     duration_s: float           # 耗时(秒)
 
 
+@dataclass(frozen=True)
+class EnvironmentInfo:
+    """运行环境的基本信息"""
+
+    os_name: str    # 操作系统, Docker 环境
+    shell: str      # exec() 用哪个 shell 执行命令, 例如 cmd.exx, /bin/sh
+
+
 class PathOutsideWorkdir(Exception):
     """路径不在工作目录下"""
 
