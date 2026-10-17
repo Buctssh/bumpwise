@@ -28,6 +28,7 @@ from .harness.prompts import build_system_prompt, build_task_message
 from .harness.trace import MESSAGES_FILE, TraceWriter, new_run_id, now_iso
 from .llm import create_llm_client
 from .tools import ToolContext, build_default_registry
+from .trace_view import render_run
 
 LOCAL_ENV_WARNING = (
     "注意: 当前使用本地环境, agent 执行的命令拥有你的全部权限, 并且不受路径限制.\n"
@@ -78,6 +79,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--state", default=DEFAULT_STATE, help="仓库的当前状态, 会写进任务消息")
     run.add_argument("--notes", default="", help="给 agent 的补充说明, 会写进任务消息")
     run.add_argument("--max-turns", type=int, help="最多调用模型多少次 (默认使用配置中的值)")
+
+    show = commands.add_parser("show", help="查看一次运行的完整记录")
+    show.add_argument("run_dir", type=Path, help="运行记录的目录, 例如 runs/20261017-120000-cortex-v1-ab12")
+    show.add_argument("--full", action="store_true", help="显示完整的内容, 不截断")
     return parser
 
 
@@ -323,6 +328,14 @@ def run(args: argparse.Namespace) -> int:
         env.close()
 
 
+def show(args: argparse.Namespace) -> int:
+    # 路径写错时 (比如少写了一层目录), 给出一句清楚的提示, 而不是 FileNotFoundError 加一大段调用栈
+    if not (args.run_dir / "meta.json").is_file():
+        raise SetupError(f"{args.run_dir} 不是一次运行的记录 (找不到 meta.json)")
+    print(render_run(args.run_dir, max_chars=None if args.full else 1500), end="")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     # 工具的输出里可能有终端编码 (比如中文 Windows 的 GBK) 无法表示的字符.
     # 打印失败会让事件回调抛出异常, 中断整个运行, 所以无法表示的字符用 ? 代替
@@ -334,6 +347,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "run":
             return run(args)
+        if args.command == "show":
+            return show(args)
     except SetupError as e:
         print(f"错误: {e}", file=sys.stderr)
         return 1
