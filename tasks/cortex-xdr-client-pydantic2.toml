@@ -1,0 +1,31 @@
+# 题目: cortex-xdr-client 从 pydantic 1 迁移到 pydantic 2
+# 来源: docs/v0/cortex-xdr-client.md. 运行 002, 003 也是这道题, 当时的准备工作是手工完成的
+
+# id 必须和文件名一致 (不含 .toml), 并带上目标版本: 同一个仓库以后可能还有别的题
+id = "cortex-xdr-client-pydantic2"
+# 只给维护题库的人看, 不会发给 agent. 不要写分析的结论 (用到了哪些写法, 哪里难), 否则一旦被拼进 prompt 就等于泄题
+description = "Cortex XDR 的 API 客户端, 从 pydantic 1 迁移到 2"
+
+[repo]
+url = "https://github.com/ebarti/cortex-xdr-client.git"
+# 迁移之前的提交. 它不在 main 分支上 (作者的 PR 合并到了功能分支), 所以克隆后要单独 fetch 这个提交
+base_commit = "3db15077facd9fae0efc586b5e7cdfb8b14e985c"
+
+[environment]
+python = "3.12"
+# 项目用 poetry 管理依赖, 这里按 CONTRIBUTING.md 用 pip 安装, 不需要 poetry
+install = ['python -m pip install -e . "pytest>=7.2,<8" "requests-mock>=1.9,<2" "pytest-mock>=3.10,<4"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"   # 基线: 升级之前安装的精确版本
+to_version = "2.14.1"      # 升级之后安装的精确版本
+target = ">=2,<3"          # 写进依赖声明的版本范围, 也会出现在给 agent 的任务消息里
+test_command = "python -m pytest -q"
+notes = ""
+
+# 升级依赖声明: 由 harness 在 agent 开始之前完成. 权限策略不允许 agent 修改目标依赖的版本
+[[migration.edits]]
+file = "pyproject.toml"
+old = 'pydantic = "^1.8.2"'
+new = 'pydantic = ">=2,<3"'
