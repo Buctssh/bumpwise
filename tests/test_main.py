@@ -72,7 +72,7 @@ def test_finished_run(repo, fake_llm, capsys):
     assert "只在可信的仓库上运行" in out          # 启动时的警告
     assert "-> edit_file(" in out                  # 进度
     assert "结束: finished" in out
-    assert "M app.py" in out                       # 工作区的改动
+    assert "\n M app.py" in out                    # 工作区的改动, 开头的空格要保留 (运行 002 中第一行丢了空格)
     assert ".bumpwise" not in out                  # 临时目录不算改动
     assert (repo / ".bumpwise" / ".gitignore").is_file()
     assert (repo / "app.py").read_text(encoding="utf-8") == "x = 2\n"

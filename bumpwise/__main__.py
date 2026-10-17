@@ -115,7 +115,8 @@ def _git(env: Environment, args: str) -> str:
     result = env.exec(f"git {args}", timeout=30)
     if result.exit_code != 0:
         raise SetupError(f"git {args} 执行失败:\n{result.output.strip()}")
-    return result.output.strip()
+    # 只去掉结尾的换行, 不能用 strip(): git status --short 每行开头的空格是有含义的 (" M" 表示未暂存的修改)
+    return result.output.rstrip()
 
 
 def _prepare_scratch_dir(env: Environment) -> None:
