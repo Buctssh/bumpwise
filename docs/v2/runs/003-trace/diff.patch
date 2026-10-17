@@ -1,0 +1,1385 @@
+diff --git a/cortex_xdr_client/api/actions_api.py b/cortex_xdr_client/api/actions_api.py
+index c27a12a..0fdff98 100644
+--- a/cortex_xdr_client/api/actions_api.py
++++ b/cortex_xdr_client/api/actions_api.py
+@@ -26,7 +26,7 @@ class ActionsAPI(BaseAPI):
+ 
+         response = self._call(call_name="get_action_status",
+                               json_value=request_data)
+-        return GetActionStatus.parse_obj(response.json())
++        return GetActionStatus.model_validate(response.json())
+ 
+     # https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-API-Reference/File-Retrieval-Details
+     def get_file_retrieval_details(self,
+@@ -42,4 +42,4 @@ class ActionsAPI(BaseAPI):
+ 
+         response = self._call(call_name="file_retrieval_details",
+                               json_value=request_data)
+-        return GetActionStatus.parse_obj(response.json())
++        return GetActionStatus.model_validate(response.json())
+diff --git a/cortex_xdr_client/api/alerts_api.py b/cortex_xdr_client/api/alerts_api.py
+index f63aeb0..2ba2a80 100644
+--- a/cortex_xdr_client/api/alerts_api.py
++++ b/cortex_xdr_client/api/alerts_api.py
+@@ -74,7 +74,7 @@ class AlertsAPI(BaseAPI):
+ 
+         response = self._call(call_name="get_alerts_multi_events",
+                               json_value=request_data)
+-        return GetAlertsResponse.parse_obj(response.json())
++        return GetAlertsResponse.model_validate(response.json())
+ 
+ 
+ def get_enum_values(p: List[Enum]) -> List[str]:
+diff --git a/cortex_xdr_client/api/cases_api.py b/cortex_xdr_client/api/cases_api.py
+index e8574c0..d44bf88 100644
+--- a/cortex_xdr_client/api/cases_api.py
++++ b/cortex_xdr_client/api/cases_api.py
+@@ -19,7 +19,7 @@ class CasesAPI(BaseAPI):
+         request_data = new_request_data(filters=filters, search_from=search_from,
+                                         search_to=search_to, sort=sort)
+         response = self._call("search", json_value=request_data)
+-        return GetCasesResponse.parse_obj(response.json())
++        return GetCasesResponse.model_validate(response.json())
+ 
+     def update_case(self, case_id: int, update_data: dict) -> None:
+         """Update one case. Successful updates return HTTP 204 without a body."""
+diff --git a/cortex_xdr_client/api/endpoints_api.py b/cortex_xdr_client/api/endpoints_api.py
+index c028600..ccd1b2c 100644
+--- a/cortex_xdr_client/api/endpoints_api.py
++++ b/cortex_xdr_client/api/endpoints_api.py
+@@ -79,7 +79,7 @@ class EndpointsAPI(BaseAPI):
+         :return: A GetAllEndpointsResponse object if successful.
+         """
+         response = self._call(call_name="get_endpoints")
+-        return GetAllEndpointsResponse.parse_obj(response.json())
++        return GetAllEndpointsResponse.model_validate(response.json())
+ 
+     def get_endpoint(self,
+                      endpoint_id_list: List[str] = None,
+@@ -167,7 +167,7 @@ class EndpointsAPI(BaseAPI):
+ 
+         response = self._call(call_name="get_endpoint",
+                               json_value=request_data)
+-        return GetEndpointResponse.parse_obj(response.json())
++        return GetEndpointResponse.model_validate(response.json())
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/response-actions/isolate-endpoints.html
+     def isolate_endpoints(self,
+@@ -182,7 +182,7 @@ class EndpointsAPI(BaseAPI):
+         request_data = new_request_data(filters=[request_filter("endpoint_id_list", "in", endpoint_id_list)])
+         response = self._call(call_name="isolate",
+                               json_value=request_data)
+-        return ResponseActionResponse.parse_obj(response.json())
++        return ResponseActionResponse.model_validate(response.json())
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/response-actions/unisolate-endpoints.html
+     def unisolate_endpoints(self,
+@@ -197,7 +197,7 @@ class EndpointsAPI(BaseAPI):
+         request_data = new_request_data(filters=[request_filter("endpoint_id_list", "in", endpoint_id_list)])
+         response = self._call(call_name="unisolate",
+                               json_value=request_data)
+-        return ResponseActionResponse.parse_obj(response.json())
++        return ResponseActionResponse.model_validate(response.json())
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/response-actions/scan-endpoints.html
+     def scan_endpoints(self,
+@@ -254,7 +254,7 @@ class EndpointsAPI(BaseAPI):
+ 
+         response = self._call(call_name="scan",
+                               json_value=request_data)
+-        return ResponseActionResponse.parse_obj(response.json())
++        return ResponseActionResponse.model_validate(response.json())
+ 
+     # https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR-REST-API/Set-an-Endpoint-Alias
+     def set_endpoint_alias(self,
+@@ -300,7 +300,7 @@ class EndpointsAPI(BaseAPI):
+         response = self._call(call_name="update_agent_name",
+                               json_value=request_data)
+ 
+-        return ResponseStatusResponse.parse_obj(response.json())
++        return ResponseStatusResponse.model_validate(response.json())
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/response-actions/retrieve-file.html
+     def retrieve_file(self,
+@@ -327,7 +327,7 @@ class EndpointsAPI(BaseAPI):
+ 
+         response = self._call(call_name="file_retrieval",
+                               json_value=request_data)
+-        return ResponseActionResponse.parse_obj(response.json())
++        return ResponseActionResponse.model_validate(response.json())
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/response-actions/quarantine-files.html
+     def quarantine_file(self,
+@@ -354,7 +354,7 @@ class EndpointsAPI(BaseAPI):
+ 
+         response = self._call(call_name="quarantine",
+                               json_value=request_data)
+-        return ResponseActionResponse.parse_obj(response.json())
++        return ResponseActionResponse.model_validate(response.json())
+ 
+     def scan_all_endpoints(self) -> Optional[ResponseActionResponse]:
+         """
+@@ -369,4 +369,4 @@ class EndpointsAPI(BaseAPI):
+         }
+         response = self._call(call_name="scan",
+                               json_value=request_data)
+-        return ResponseActionResponse.parse_obj(response.json())
++        return ResponseActionResponse.model_validate(response.json())
+diff --git a/cortex_xdr_client/api/incidents_api.py b/cortex_xdr_client/api/incidents_api.py
+index 85be0d7..8fc3a71 100644
+--- a/cortex_xdr_client/api/incidents_api.py
++++ b/cortex_xdr_client/api/incidents_api.py
+@@ -79,7 +79,7 @@ class IncidentsAPI(BaseAPI):
+ 
+         request_data = new_request_data(filters=filters, search_from=search_from, search_to=search_to, sort=sort)
+         response = self._call(call_name="get_incidents", json_value=request_data)
+-        return GetIncidentsResponse.parse_obj(response.json())
++        return GetIncidentsResponse.model_validate(response.json())
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/incident-management/get-extra-incident-data.html
+     def get_incident_extra_data(self,
+@@ -96,4 +96,4 @@ class IncidentsAPI(BaseAPI):
+         request_data = new_request_data(other=self._get_incident_extra_data_filter(incident_id, alerts_limit))
+         response = self._call(call_name="get_incident_extra_data",
+                               json_value=request_data)
+-        return GetExtraIncidentDataResponse.parse_obj(response.json())
++        return GetExtraIncidentDataResponse.model_validate(response.json())
+diff --git a/cortex_xdr_client/api/ioc_api.py b/cortex_xdr_client/api/ioc_api.py
+index 9befcfa..7a7402e 100644
+--- a/cortex_xdr_client/api/ioc_api.py
++++ b/cortex_xdr_client/api/ioc_api.py
+@@ -18,7 +18,7 @@ class IocAPI(BaseAPI):
+         :param validate: Whether to return an array of errors in the case of an unsuccessful update indicator API request.
+         :return: Returns an IoCResponse object if successful.
+         """
+-        values = [indicator.dict(by_alias=True, exclude_none=True) for indicator in indicators]
++        values = [indicator.model_dump(by_alias=True, exclude_none=True) for indicator in indicators]
+         for value in values:
+             if value['severity'] == 'INFORMATIONAL':
+                 value['severity'] = 'INFO'
+@@ -31,4 +31,4 @@ class IocAPI(BaseAPI):
+             "validate":     validate
+         }
+         response = self._call(call_name="insert_jsons", json_value=request_data)
+-        return IoCResponse.parse_obj(response.json())
++        return IoCResponse.model_validate(response.json())
+diff --git a/cortex_xdr_client/api/issues_api.py b/cortex_xdr_client/api/issues_api.py
+index b84bbfd..9511332 100644
+--- a/cortex_xdr_client/api/issues_api.py
++++ b/cortex_xdr_client/api/issues_api.py
+@@ -27,7 +27,7 @@ class IssuesAPI(BaseAPI):
+         request_data = new_request_data(filters=filters, search_from=search_from,
+                                         search_to=search_to, sort=sort, other=other)
+         response = self._call("search", json_value=request_data)
+-        return GetIssuesResponse.parse_obj(response.json())
++        return GetIssuesResponse.model_validate(response.json())
+ 
+     def create_issue(self, issue: dict) -> dict:
+         """Create an issue; returns external_id and detection_method (HTTP 202)."""
+diff --git a/cortex_xdr_client/api/models/action_status.py b/cortex_xdr_client/api/models/action_status.py
+index b3e206c..c211581 100644
+--- a/cortex_xdr_client/api/models/action_status.py
++++ b/cortex_xdr_client/api/models/action_status.py
+@@ -1,15 +1,15 @@
+ from typing import Dict, Optional, Union
+ 
+-from pydantic import BaseModel
++from pydantic import BaseModel, RootModel
+ 
+ 
+-class ActionStatuStr(BaseModel):
++class ActionStatuStr(RootModel[Dict[Union[str, None], Union[str, None]]]):
+     # Since we don't know what the returned key of <agent ID>/<endpoint ID> will be.
+-    __root__: Dict[Union[str, None], Union[str, None]]
++    pass
+ 
+ 
+ class GetActionStatusItem(BaseModel):
+-    data: Optional[ActionStatuStr]
++    data: Optional[ActionStatuStr] = None
+ 
+ 
+ class GetActionStatus(BaseModel):
+diff --git a/cortex_xdr_client/api/models/alerts.py b/cortex_xdr_client/api/models/alerts.py
+index fd6fd13..665350d 100644
+--- a/cortex_xdr_client/api/models/alerts.py
++++ b/cortex_xdr_client/api/models/alerts.py
+@@ -1,7 +1,7 @@
+ from enum import Enum
+ from typing import Any, List, Optional, Union
+ 
+-from pydantic import BaseModel
++from pydantic import BaseModel, ConfigDict
+ 
+ 
+ class AlertSeverity(str, Enum):
+@@ -16,155 +16,154 @@ class AlertSeverity(str, Enum):
+ 
+ 
+ class Event(BaseModel):
+-    action_country: Optional[str]
+-    action_external_hostname: Optional[str]
+-    action_file_macro_sha256: Optional[str]
+-    action_file_md5: Optional[str]
+-    action_file_name: Optional[str]
+-    action_file_path: Optional[str]
+-    action_file_sha256: Optional[str]
+-    action_local_ip: Optional[str]
+-    action_local_port: Optional[str]
+-    action_process_causality_id: Optional[str]
+-    action_process_image_command_line: Optional[str]
+-    action_process_image_name: Optional[str]
+-    action_process_image_sha256: Optional[str]
+-    action_process_instance_id: Optional[str]
+-    action_process_signature_status: Optional[str]
+-    action_process_signature_vendor: Optional[str]
+-    action_registry_data: Optional[str]
+-    action_registry_full_key: Optional[str]
+-    action_registry_key_name: Optional[str]
+-    action_registry_value_name: Optional[str]
+-    action_remote_ip: Optional[str]
+-    action_remote_port: Optional[str]
+-    actor_causality_id: Optional[str]
+-    actor_process_causality_id: Optional[str]
+-    actor_process_command_line: Optional[str]
+-    actor_process_image_md5: Optional[str]
+-    actor_process_image_name: Optional[str]
+-    actor_process_image_path: Optional[str]
+-    actor_process_image_sha256: Optional[str]
+-    actor_process_instance_id: Optional[str]
+-    actor_process_os_pid: Optional[str]
+-    actor_process_signature_status: Optional[str]
+-    actor_process_signature_vendor: Optional[str]
+-    actor_thread_thread_id: Optional[str]
+-    agent_host_boot_time: Optional[str]
+-    agent_install_type: Optional[str]
+-    association_strength: Optional[str]
+-    causality_actor_causality_id: Optional[str]
+-    causality_actor_process_command_line: Optional[str]
+-    causality_actor_process_execution_time: Optional[str]
+-    causality_actor_process_image_md5: Optional[str]
+-    causality_actor_process_image_name: Optional[str]
+-    causality_actor_process_image_path: Optional[str]
+-    causality_actor_process_image_sha256: Optional[str]
+-    causality_actor_process_signature_status: Optional[str]
+-    causality_actor_process_signature_vendor: Optional[str]
+-    dns_query_name: Optional[str]
+-    dst_action_country: Optional[str]
+-    dst_action_external_hostname: Optional[str]
+-    dst_action_external_port: Optional[str]
+-    dst_agent_id: Optional[str]
+-    dst_association_strength: Optional[str]
+-    dst_causality_actor_process_execution_time: Optional[str]
+-    event_id: Optional[str]
+-    event_sub_type: Optional[str]
+-    event_timestamp: Optional[int]
+-    event_type: Optional[str]
+-    fw_app_category: Optional[str]
+-    fw_app_id: Optional[str]
+-    fw_app_subcategory: Optional[str]
+-    fw_app_technology: Optional[str]
+-    fw_device_name: Optional[str]
+-    fw_email_recipient: Optional[str]
+-    fw_email_sender: Optional[str]
+-    fw_email_subject: Optional[str]
+-    fw_interface_from: Optional[str]
+-    fw_interface_to: Optional[str]
+-    fw_is_phishing: Optional[str]
+-    fw_misc: Optional[str]
+-    fw_rule: Optional[str]
+-    fw_rule_id: Optional[str]
+-    fw_serial_number: Optional[str]
+-    fw_url_domain: Optional[str]
+-    fw_vsys: Optional[str]
+-    fw_xff: Optional[str]
+-    module_id: Optional[str]
+-    os_actor_causality_id: Optional[str]
+-    os_actor_effective_username: Optional[str]
+-    os_actor_process_causality_id: Optional[str]
+-    os_actor_process_command_line: Optional[str]
+-    os_actor_process_image_name: Optional[str]
+-    os_actor_process_image_path: Optional[str]
+-    os_actor_process_image_sha256: Optional[str]
+-    os_actor_process_instance_id: Optional[str]
+-    os_actor_process_os_pid: Optional[str]
+-    os_actor_process_signature_status: Optional[str]
+-    os_actor_process_signature_vendor: Optional[str]
+-    os_actor_thread_thread_id: Optional[str]
+-    story_id: Optional[str]
+-    user_name: Optional[str]
++    action_country: Optional[str] = None
++    action_external_hostname: Optional[str] = None
++    action_file_macro_sha256: Optional[str] = None
++    action_file_md5: Optional[str] = None
++    action_file_name: Optional[str] = None
++    action_file_path: Optional[str] = None
++    action_file_sha256: Optional[str] = None
++    action_local_ip: Optional[str] = None
++    action_local_port: Optional[str] = None
++    action_process_causality_id: Optional[str] = None
++    action_process_image_command_line: Optional[str] = None
++    action_process_image_name: Optional[str] = None
++    action_process_image_sha256: Optional[str] = None
++    action_process_instance_id: Optional[str] = None
++    action_process_signature_status: Optional[str] = None
++    action_process_signature_vendor: Optional[str] = None
++    action_registry_data: Optional[str] = None
++    action_registry_full_key: Optional[str] = None
++    action_registry_key_name: Optional[str] = None
++    action_registry_value_name: Optional[str] = None
++    action_remote_ip: Optional[str] = None
++    action_remote_port: Optional[str] = None
++    actor_causality_id: Optional[str] = None
++    actor_process_causality_id: Optional[str] = None
++    actor_process_command_line: Optional[str] = None
++    actor_process_image_md5: Optional[str] = None
++    actor_process_image_name: Optional[str] = None
++    actor_process_image_path: Optional[str] = None
++    actor_process_image_sha256: Optional[str] = None
++    actor_process_instance_id: Optional[str] = None
++    actor_process_os_pid: Optional[str] = None
++    actor_process_signature_status: Optional[str] = None
++    actor_process_signature_vendor: Optional[str] = None
++    actor_thread_thread_id: Optional[str] = None
++    agent_host_boot_time: Optional[str] = None
++    agent_install_type: Optional[str] = None
++    association_strength: Optional[str] = None
++    causality_actor_causality_id: Optional[str] = None
++    causality_actor_process_command_line: Optional[str] = None
++    causality_actor_process_execution_time: Optional[str] = None
++    causality_actor_process_image_md5: Optional[str] = None
++    causality_actor_process_image_name: Optional[str] = None
++    causality_actor_process_image_path: Optional[str] = None
++    causality_actor_process_image_sha256: Optional[str] = None
++    causality_actor_process_signature_status: Optional[str] = None
++    causality_actor_process_signature_vendor: Optional[str] = None
++    dns_query_name: Optional[str] = None
++    dst_action_country: Optional[str] = None
++    dst_action_external_hostname: Optional[str] = None
++    dst_action_external_port: Optional[str] = None
++    dst_agent_id: Optional[str] = None
++    dst_association_strength: Optional[str] = None
++    dst_causality_actor_process_execution_time: Optional[str] = None
++    event_id: Optional[str] = None
++    event_sub_type: Optional[str] = None
++    event_timestamp: Optional[int] = None
++    event_type: Optional[str] = None
++    fw_app_category: Optional[str] = None
++    fw_app_id: Optional[str] = None
++    fw_app_subcategory: Optional[str] = None
++    fw_app_technology: Optional[str] = None
++    fw_device_name: Optional[str] = None
++    fw_email_recipient: Optional[str] = None
++    fw_email_sender: Optional[str] = None
++    fw_email_subject: Optional[str] = None
++    fw_interface_from: Optional[str] = None
++    fw_interface_to: Optional[str] = None
++    fw_is_phishing: Optional[str] = None
++    fw_misc: Optional[str] = None
++    fw_rule: Optional[str] = None
++    fw_rule_id: Optional[str] = None
++    fw_serial_number: Optional[str] = None
++    fw_url_domain: Optional[str] = None
++    fw_vsys: Optional[str] = None
++    fw_xff: Optional[str] = None
++    module_id: Optional[str] = None
++    os_actor_causality_id: Optional[str] = None
++    os_actor_effective_username: Optional[str] = None
++    os_actor_process_causality_id: Optional[str] = None
++    os_actor_process_command_line: Optional[str] = None
++    os_actor_process_image_name: Optional[str] = None
++    os_actor_process_image_path: Optional[str] = None
++    os_actor_process_image_sha256: Optional[str] = None
++    os_actor_process_instance_id: Optional[str] = None
++    os_actor_process_os_pid: Optional[str] = None
++    os_actor_process_signature_status: Optional[str] = None
++    os_actor_process_signature_vendor: Optional[str] = None
++    os_actor_thread_thread_id: Optional[str] = None
++    story_id: Optional[str] = None
++    user_name: Optional[str] = None
+ 
+ 
+ class AlertDescriptionItem(BaseModel):
+     pretty_name: str
+-    data_type: Optional[Any]
++    data_type: Optional[Any] = None
+     render_type: str
+-    entity_map: Optional[Any]
+-    dml_ui: Optional[bool]
+-    dml_type: Optional[Any]
++    entity_map: Optional[Any] = None
++    dml_ui: Optional[bool] = None
++    dml_type: Optional[Any] = None
+ 
+ 
+ class Alert(BaseModel):
+-    action: Optional[str]
+-    action_pretty: Optional[str]
+-    agent_data_collection_status: Optional[bool]
+-    agent_device_domain: Optional[str]
+-    agent_fqdn: Optional[str]
+-    agent_is_vdi: Optional[str]
+-    agent_os_sub_type: Optional[str]
+-    agent_os_type: Optional[str]
+-    agent_version: Optional[str]
+-    alert_id: Optional[str]
+-    attempt_counter: Optional[int]
+-    bioc_category_enum_key: Optional[str]
+-    bioc_indicator: Optional[str]
+-    category: Optional[str]
+-    contains_featured_host: Optional[bool]
+-    contains_featured_ip: Optional[bool]
+-    contains_featured_user: Optional[bool]
+-    deduplicate_tokens: Optional[str]
++    action: Optional[str] = None
++    action_pretty: Optional[str] = None
++    agent_data_collection_status: Optional[bool] = None
++    agent_device_domain: Optional[str] = None
++    agent_fqdn: Optional[str] = None
++    agent_is_vdi: Optional[str] = None
++    agent_os_sub_type: Optional[str] = None
++    agent_os_type: Optional[str] = None
++    agent_version: Optional[str] = None
++    alert_id: Optional[str] = None
++    attempt_counter: Optional[int] = None
++    bioc_category_enum_key: Optional[str] = None
++    bioc_indicator: Optional[str] = None
++    category: Optional[str] = None
++    contains_featured_host: Optional[bool] = None
++    contains_featured_ip: Optional[bool] = None
++    contains_featured_user: Optional[bool] = None
++    deduplicate_tokens: Optional[str] = None
+     description: Union[str, List[AlertDescriptionItem]]
+-    detection_timestamp: Optional[int]
+-    end_match_attempt_ts: Optional[int]
+-    endpoint_id: Optional[str]
++    detection_timestamp: Optional[int] = None
++    end_match_attempt_ts: Optional[int] = None
++    endpoint_id: Optional[str] = None
+     events: List[Event]
+-    external_id: Optional[str]
+-    filter_rule_id: Optional[str]
+-    host_ip: Optional[List[str]]
+-    host_name: Optional[str]
+-    is_whitelisted: Optional[bool]
+-    local_insert_ts: Optional[int]
+-    mac: Optional[str]
+-    mac_address: Optional[List[str]]
+-    matching_service_rule_id: Optional[str]
+-    matching_status: Optional[str]
+-    mitre_tactic_id_and_name: Optional[List[str]]
+-    mitre_technique_id_and_name: Optional[List[str]]
+-    name: Optional[str]
+-    severity: Optional[AlertSeverity]
+-    source: Optional[str]
+-    starred: Optional[bool]
++    external_id: Optional[str] = None
++    filter_rule_id: Optional[str] = None
++    host_ip: Optional[List[str]] = None
++    host_name: Optional[str] = None
++    is_whitelisted: Optional[bool] = None
++    local_insert_ts: Optional[int] = None
++    mac: Optional[str] = None
++    mac_address: Optional[List[str]] = None
++    matching_service_rule_id: Optional[str] = None
++    matching_status: Optional[str] = None
++    mitre_tactic_id_and_name: Optional[List[str]] = None
++    mitre_technique_id_and_name: Optional[List[str]] = None
++    name: Optional[str] = None
++    severity: Optional[AlertSeverity] = None
++    source: Optional[str] = None
++    starred: Optional[bool] = None
+ 
+-    class Config:
+-        use_enum_values = True
++    model_config = ConfigDict(use_enum_values=True)
+ 
+ 
+ class GetAlertsResponseItem(BaseModel):
+-    total_count: Optional[int]
+-    result_count: Optional[int]
++    total_count: Optional[int] = None
++    result_count: Optional[int] = None
+     alerts: List[Alert]
+ 
+ 
+diff --git a/cortex_xdr_client/api/models/cases.py b/cortex_xdr_client/api/models/cases.py
+index 9fb4848..154b960 100644
+--- a/cortex_xdr_client/api/models/cases.py
++++ b/cortex_xdr_client/api/models/cases.py
+@@ -1,40 +1,39 @@
+ from typing import List, Optional
+ 
+-from pydantic import BaseModel, Field
++from pydantic import BaseModel, ConfigDict, Field
+ 
+ 
+ class Case(BaseModel):
+-    case_id: Optional[int]
+-    case_name: Optional[str]
+-    is_blocked: Optional[bool]
+-    creation_time: Optional[int]
+-    modification_time: Optional[int]
+-    status_progress: Optional[str]
+-    resolve_reason: Optional[str]
+-    severity: Optional[str]
+-    description: Optional[str]
+-    assigned_user_mail: Optional[str]
+-    assigned_user_pretty_name: Optional[str]
+-    issue_count: Optional[int]
+-    issue_ids: Optional[List[int]]
+-    user_severity: Optional[str]
+-    notes: Optional[str]
+-    resolve_comment: Optional[str]
+-    resolved_timestamp: Optional[int]
+-    xdr_url: Optional[str]
+-    starred: Optional[bool]
+-    hosts: Optional[List[str]]
+-    users: Optional[List[str]]
+-    tags: Optional[List[str]]
+-    custom_fields: Optional[dict]
+-    assets: Optional[List[dict]]
+-    asset_ids: Optional[List[str]]
+-    case_domain: Optional[str]
+-    case_team: Optional[List[dict]]
+-    access_mode: Optional[str]
+-
+-    class Config:
+-        extra = 'allow'
++    case_id: Optional[int] = None
++    case_name: Optional[str] = None
++    is_blocked: Optional[bool] = None
++    creation_time: Optional[int] = None
++    modification_time: Optional[int] = None
++    status_progress: Optional[str] = None
++    resolve_reason: Optional[str] = None
++    severity: Optional[str] = None
++    description: Optional[str] = None
++    assigned_user_mail: Optional[str] = None
++    assigned_user_pretty_name: Optional[str] = None
++    issue_count: Optional[int] = None
++    issue_ids: Optional[List[int]] = None
++    user_severity: Optional[str] = None
++    notes: Optional[str] = None
++    resolve_comment: Optional[str] = None
++    resolved_timestamp: Optional[int] = None
++    xdr_url: Optional[str] = None
++    starred: Optional[bool] = None
++    hosts: Optional[List[str]] = None
++    users: Optional[List[str]] = None
++    tags: Optional[List[str]] = None
++    custom_fields: Optional[dict] = None
++    assets: Optional[List[dict]] = None
++    asset_ids: Optional[List[str]] = None
++    case_domain: Optional[str] = None
++    case_team: Optional[List[dict]] = None
++    access_mode: Optional[str] = None
++
++    model_config = ConfigDict(extra='allow')
+ 
+ 
+ class GetCasesResponseItem(BaseModel):
+diff --git a/cortex_xdr_client/api/models/endpoints.py b/cortex_xdr_client/api/models/endpoints.py
+index a13d474..7403126 100644
+--- a/cortex_xdr_client/api/models/endpoints.py
++++ b/cortex_xdr_client/api/models/endpoints.py
+@@ -1,7 +1,7 @@
+ from enum import Enum
+ from typing import List, Optional, Union
+ 
+-from pydantic import BaseModel
++from pydantic import BaseModel, ConfigDict
+ 
+ 
+ class EndpointStatus(Enum):
+@@ -50,11 +50,11 @@ class ScanStatus(Enum):
+ 
+ 
+ class LightEndpoint(BaseModel):
+-    agent_id: Optional[str]
+-    agent_status: Optional[str]
+-    host_name: Optional[str]
+-    agent_type: Optional[str]
+-    ip: Optional[List[str]]
++    agent_id: Optional[str] = None
++    agent_status: Optional[str] = None
++    host_name: Optional[str] = None
++    agent_type: Optional[str] = None
++    ip: Optional[List[str]] = None
+ 
+ 
+ class GetAllEndpointsResponse(BaseModel):
+@@ -62,53 +62,52 @@ class GetAllEndpointsResponse(BaseModel):
+ 
+ 
+ class Endpoint(BaseModel):
+-    active_directory: Union[List[str], Optional[str]]
+-    alias: Optional[str]
+-    content_version: Optional[str]
+-    domain: Optional[str]
+-    endpoint_id: Optional[str]
+-    endpoint_name: Optional[str]
++    active_directory: Union[List[str], Optional[str]] = None
++    alias: Optional[str] = None
++    content_version: Optional[str] = None
++    domain: Optional[str] = None
++    endpoint_id: Optional[str] = None
++    endpoint_name: Optional[str] = None
+     endpoint_status: EndpointStatus
+-    endpoint_type: Optional[str]
+-    endpoint_version: Optional[str]
+-    first_seen: Optional[int]
+-    group_name: Optional[List[str]]
+-    install_date: Optional[int]
+-    installation_package: Optional[str]
+-    ip: Optional[List[str]]
++    endpoint_type: Optional[str] = None
++    endpoint_version: Optional[str] = None
++    first_seen: Optional[int] = None
++    group_name: Optional[List[str]] = None
++    install_date: Optional[int] = None
++    installation_package: Optional[str] = None
++    ip: Optional[List[str]] = None
+     is_isolated: IsolateStatus
+-    isolated_date: Optional[str]
+-    last_seen: Optional[int]
+-    last_content_update_time: Optional[int]
+-    operational_status: Optional[str]
+-    operational_status_description: Optional[str]
+-    os_type: Optional[EndpointPlatform]
+-    scan_status: Optional[ScanStatus]
+-    users: Union[Optional[List[str]], Optional[str]]
+-    mac_address: Optional[List[str]]
+-
+-    os_version: Optional[str]
+-    public_ip: Optional[str]
+-    ipv6: Optional[List[str]]
+-    operational_status_details: Optional[List[dict]]
+-    content_release_timestamp: Optional[int]
+-    content_status: Optional[str]
+-    operating_system: Optional[str]
+-    assigned_prevention_policy: Optional[str]
+-    assigned_extensions_policy: Optional[str]
+-    cloud_provider: Optional[str]
+-    cloud_region: Optional[str]
+-    cloud_provider_account_id: Optional[str]
+-    cloud_instance_id: Optional[str]
+-    cloud_id: Optional[str]
+-
+-    class Config:
+-        extra = 'allow'
++    isolated_date: Optional[str] = None
++    last_seen: Optional[int] = None
++    last_content_update_time: Optional[int] = None
++    operational_status: Optional[str] = None
++    operational_status_description: Optional[str] = None
++    os_type: Optional[EndpointPlatform] = None
++    scan_status: Optional[ScanStatus] = None
++    users: Union[Optional[List[str]], Optional[str]] = None
++    mac_address: Optional[List[str]] = None
++
++    os_version: Optional[str] = None
++    public_ip: Optional[str] = None
++    ipv6: Optional[List[str]] = None
++    operational_status_details: Optional[List[dict]] = None
++    content_release_timestamp: Optional[int] = None
++    content_status: Optional[str] = None
++    operating_system: Optional[str] = None
++    assigned_prevention_policy: Optional[str] = None
++    assigned_extensions_policy: Optional[str] = None
++    cloud_provider: Optional[str] = None
++    cloud_region: Optional[str] = None
++    cloud_provider_account_id: Optional[str] = None
++    cloud_instance_id: Optional[str] = None
++    cloud_id: Optional[str] = None
++
++    model_config = ConfigDict(extra='allow')
+ 
+ 
+ class GetEndpointResponseItem(BaseModel):
+-    total_count: Optional[int]
+-    result_count: Optional[int]
++    total_count: Optional[int] = None
++    result_count: Optional[int] = None
+     endpoints: List[Endpoint]
+ 
+ 
+@@ -117,9 +116,9 @@ class GetEndpointResponse(BaseModel):
+ 
+ 
+ class ResponseActionResponseItem(BaseModel):
+-    action_id: Optional[str]
+-    status: Optional[int]
+-    endpoints_count: Optional[int]
++    action_id: Optional[str] = None
++    status: Optional[int] = None
++    endpoints_count: Optional[int] = None
+ 
+ 
+ class ResponseActionResponse(BaseModel):
+diff --git a/cortex_xdr_client/api/models/incidents.py b/cortex_xdr_client/api/models/incidents.py
+index b8437d8..53ed838 100644
+--- a/cortex_xdr_client/api/models/incidents.py
++++ b/cortex_xdr_client/api/models/incidents.py
+@@ -19,43 +19,43 @@ class IncidentStatus(str, Enum):
+ 
+ 
+ class Incident(BaseModel):
+-    alert_categories: Optional[List[str]]
+-    alert_count: Optional[int]
+-    alerts_grouping_status: Optional[str]
+-    assigned_user_mail: Optional[str]
+-    assigned_user_pretty_name: Optional[str]
+-    creation_time: Optional[int]
+-    description: Optional[str]
+-    detection_time: Optional[int]
+-    high_severity_alert_count: Optional[int]
+-    host_count: Optional[int]
+-    hosts: Optional[List[str]]
+-    incident_id: Optional[str]
+-    incident_name: Optional[str]
+-    incident_sources: Optional[List[str]]
+-    low_severity_alert_count: Optional[int]
+-    manual_description: Optional[str]
+-    manual_score: Optional[int]
+-    manual_severity: Optional[str]
+-    med_severity_alert_count: Optional[int]
+-    mitre_tactics_ids_and_names: Optional[List[str]]
+-    mitre_techniques_ids_and_names: Optional[List[str]]
+-    modification_time: Optional[int]
+-    notes: Optional[str]
+-    resolve_comment: Optional[str]
+-    rule_based_score: Optional[int]
+-    severity: Optional[str]
+-    starred: Optional[bool]
++    alert_categories: Optional[List[str]] = None
++    alert_count: Optional[int] = None
++    alerts_grouping_status: Optional[str] = None
++    assigned_user_mail: Optional[str] = None
++    assigned_user_pretty_name: Optional[str] = None
++    creation_time: Optional[int] = None
++    description: Optional[str] = None
++    detection_time: Optional[int] = None
++    high_severity_alert_count: Optional[int] = None
++    host_count: Optional[int] = None
++    hosts: Optional[List[str]] = None
++    incident_id: Optional[str] = None
++    incident_name: Optional[str] = None
++    incident_sources: Optional[List[str]] = None
++    low_severity_alert_count: Optional[int] = None
++    manual_description: Optional[str] = None
++    manual_score: Optional[int] = None
++    manual_severity: Optional[str] = None
++    med_severity_alert_count: Optional[int] = None
++    mitre_tactics_ids_and_names: Optional[List[str]] = None
++    mitre_techniques_ids_and_names: Optional[List[str]] = None
++    modification_time: Optional[int] = None
++    notes: Optional[str] = None
++    resolve_comment: Optional[str] = None
++    rule_based_score: Optional[int] = None
++    severity: Optional[str] = None
++    starred: Optional[bool] = None
+     status: IncidentStatus
+-    user_count: Optional[int]
+-    users: Optional[List[str]]
+-    wildfire_hits: Optional[int]
+-    xdr_url: Optional[str]
++    user_count: Optional[int] = None
++    users: Optional[List[str]] = None
++    wildfire_hits: Optional[int] = None
++    xdr_url: Optional[str] = None
+ 
+ 
+ class GetIncidentsResponseItem(BaseModel):
+-    total_count: Optional[int]
+-    result_count: Optional[int]
++    total_count: Optional[int] = None
++    result_count: Optional[int] = None
+     incidents: List[Incident]
+ 
+ 
+@@ -64,153 +64,153 @@ class GetIncidentsResponse(BaseModel):
+ 
+ 
+ class AlertsDatum(BaseModel):
+-    action: Optional[str]
+-    action_country: Optional[str]
+-    action_external_hostname: Optional[str]
+-    action_file_macro_sha256: Optional[str]
+-    action_file_md5: Optional[str]
+-    action_file_name: Optional[str]
+-    action_file_path: Optional[str]
+-    action_file_sha256: Optional[str]
+-    action_local_ip: Optional[str]
+-    action_local_port: Optional[int]
+-    action_pretty: Optional[str]
+-    action_process_causality_id: Optional[str]
+-    action_process_image_command_line: Optional[str]
+-    action_process_image_name: Optional[str]
+-    action_process_image_sha256: Optional[str]
+-    action_process_instance_id: Optional[str]
+-    action_process_signature_status: Optional[str]
+-    action_process_signature_vendor: Optional[str]
+-    action_registry_data: Optional[str]
+-    action_registry_full_key: Optional[str]
+-    action_registry_key_name: Optional[str]
+-    action_registry_value_name: Optional[str]
+-    action_remote_ip: Optional[str]
+-    action_remote_port: Optional[int]
+-    actor_causality_id: Optional[str]
+-    actor_process_causality_id: Optional[str]
+-    actor_process_command_line: Optional[str]
+-    actor_process_image_md5: Optional[str]
+-    actor_process_image_name: Optional[str]
+-    actor_process_image_path: Optional[str]
+-    actor_process_image_sha256: Optional[str]
+-    actor_process_instance_id: Optional[str]
+-    actor_process_os_pid: Optional[str]
+-    actor_process_signature_status: Optional[str]
+-    actor_process_signature_vendor: Optional[str]
+-    actor_thread_thread_id: Optional[str]
+-    agent_data_collection_status: Optional[str]
+-    agent_device_domain: Optional[str]
+-    agent_fqdn: Optional[str]
+-    agent_host_boot_time: Optional[str]
+-    agent_install_type: Optional[str]
+-    agent_is_vdi: Optional[str]
+-    agent_os_sub_type: Optional[str]
+-    agent_os_type: Optional[str]
+-    agent_version: Optional[str]
+-    alert_id: Optional[int]
+-    association_strength: Optional[str]
+-    attempt_counter: Optional[str]
+-    bioc_category_enum_key: Optional[str]
+-    bioc_indicator: Optional[str]
+-    case_id: Optional[int]
+-    category: Optional[str]
+-    causality_actor_causality_id: Optional[str]
+-    causality_actor_process_command_line: Optional[str]
+-    causality_actor_process_execution_time: Optional[str]
+-    causality_actor_process_image_md5: Optional[str]
+-    causality_actor_process_image_name: Optional[str]
+-    causality_actor_process_image_path: Optional[str]
+-    causality_actor_process_image_sha256: Optional[str]
+-    causality_actor_process_signature_status: Optional[str]
+-    causality_actor_process_signature_vendor: Optional[str]
+-    contains_featured_host: Optional[str]
+-    contains_featured_ip_address: Optional[str]
+-    contains_featured_user: Optional[str]
+-    deduplicate_tokens: Optional[str]
+-    description: Optional[str]
+-    detection_timestamp: Optional[int]
+-    dns_query_name: Optional[str]
+-    dst_action_country: Optional[str]
+-    dst_action_external_hostname: Optional[str]
+-    dst_action_external_port: Optional[str]
+-    dst_agent_id: Optional[str]
+-    dst_association_strength: Optional[str]
+-    dst_causality_actor_process_execution_time: Optional[str]
+-    end_match_attempt_ts: Optional[str]
+-    endpoint_id: Optional[str]
+-    event_id: Optional[str]
+-    event_sub_type: Optional[str]
+-    event_timestamp: Optional[str]
+-    event_type: Optional[str]
+-    external_id: Optional[str]
+-    filter_rule_id: Optional[str]
+-    fw_app_category: Optional[str]
+-    fw_app_id: Optional[str]
+-    fw_app_subcategory: Optional[str]
+-    fw_app_technology: Optional[str]
+-    fw_device_name: Optional[str]
+-    fw_email_recipient: Optional[str]
+-    fw_email_sender: Optional[str]
+-    fw_email_subject: Optional[str]
+-    fw_interface_from: Optional[str]
+-    fw_interface_to: Optional[str]
+-    fw_is_phishing: Optional[str]
+-    fw_misc: Optional[str]
+-    fw_rule: Optional[str]
+-    fw_rule_id: Optional[str]
+-    fw_serial_number: Optional[str]
+-    fw_url_domain: Optional[str]
+-    fw_vsys: Optional[str]
+-    fw_xff: Optional[str]
+-    host_ip: Optional[str]
+-    host_name: Optional[str]
+-    is_whitelisted: Optional[bool]
+-    local_insert_ts: Optional[int]
+-    mac: Optional[str]
+-    matching_service_rule_id: Optional[str]
+-    matching_status: Optional[str]
+-    mitre_tactic_id_and_name: Optional[str]
+-    mitre_technique_id_and_name: Optional[str]
+-    module_id: Optional[str]
+-    name: Optional[str]
+-    os_actor_causality_id: Optional[str]
+-    os_actor_effective_username: Optional[str]
+-    os_actor_process_causality_id: Optional[str]
+-    os_actor_process_command_line: Optional[str]
+-    os_actor_process_image_name: Optional[str]
+-    os_actor_process_image_path: Optional[str]
+-    os_actor_process_image_sha256: Optional[str]
+-    os_actor_process_instance_id: Optional[str]
+-    os_actor_process_os_pid: Optional[str]
+-    os_actor_process_signature_status: Optional[str]
+-    os_actor_process_signature_vendor: Optional[str]
+-    os_actor_thread_thread_id: Optional[str]
+-    severity: Optional[str]
+-    source: Optional[str]
+-    starred: Optional[bool]
+-    story_id: Optional[str]
+-    user_name: Optional[str]
++    action: Optional[str] = None
++    action_country: Optional[str] = None
++    action_external_hostname: Optional[str] = None
++    action_file_macro_sha256: Optional[str] = None
++    action_file_md5: Optional[str] = None
++    action_file_name: Optional[str] = None
++    action_file_path: Optional[str] = None
++    action_file_sha256: Optional[str] = None
++    action_local_ip: Optional[str] = None
++    action_local_port: Optional[int] = None
++    action_pretty: Optional[str] = None
++    action_process_causality_id: Optional[str] = None
++    action_process_image_command_line: Optional[str] = None
++    action_process_image_name: Optional[str] = None
++    action_process_image_sha256: Optional[str] = None
++    action_process_instance_id: Optional[str] = None
++    action_process_signature_status: Optional[str] = None
++    action_process_signature_vendor: Optional[str] = None
++    action_registry_data: Optional[str] = None
++    action_registry_full_key: Optional[str] = None
++    action_registry_key_name: Optional[str] = None
++    action_registry_value_name: Optional[str] = None
++    action_remote_ip: Optional[str] = None
++    action_remote_port: Optional[int] = None
++    actor_causality_id: Optional[str] = None
++    actor_process_causality_id: Optional[str] = None
++    actor_process_command_line: Optional[str] = None
++    actor_process_image_md5: Optional[str] = None
++    actor_process_image_name: Optional[str] = None
++    actor_process_image_path: Optional[str] = None
++    actor_process_image_sha256: Optional[str] = None
++    actor_process_instance_id: Optional[str] = None
++    actor_process_os_pid: Optional[str] = None
++    actor_process_signature_status: Optional[str] = None
++    actor_process_signature_vendor: Optional[str] = None
++    actor_thread_thread_id: Optional[str] = None
++    agent_data_collection_status: Optional[str] = None
++    agent_device_domain: Optional[str] = None
++    agent_fqdn: Optional[str] = None
++    agent_host_boot_time: Optional[str] = None
++    agent_install_type: Optional[str] = None
++    agent_is_vdi: Optional[str] = None
++    agent_os_sub_type: Optional[str] = None
++    agent_os_type: Optional[str] = None
++    agent_version: Optional[str] = None
++    alert_id: Optional[int] = None
++    association_strength: Optional[str] = None
++    attempt_counter: Optional[str] = None
++    bioc_category_enum_key: Optional[str] = None
++    bioc_indicator: Optional[str] = None
++    case_id: Optional[int] = None
++    category: Optional[str] = None
++    causality_actor_causality_id: Optional[str] = None
++    causality_actor_process_command_line: Optional[str] = None
++    causality_actor_process_execution_time: Optional[str] = None
++    causality_actor_process_image_md5: Optional[str] = None
++    causality_actor_process_image_name: Optional[str] = None
++    causality_actor_process_image_path: Optional[str] = None
++    causality_actor_process_image_sha256: Optional[str] = None
++    causality_actor_process_signature_status: Optional[str] = None
++    causality_actor_process_signature_vendor: Optional[str] = None
++    contains_featured_host: Optional[str] = None
++    contains_featured_ip_address: Optional[str] = None
++    contains_featured_user: Optional[str] = None
++    deduplicate_tokens: Optional[str] = None
++    description: Optional[str] = None
++    detection_timestamp: Optional[int] = None
++    dns_query_name: Optional[str] = None
++    dst_action_country: Optional[str] = None
++    dst_action_external_hostname: Optional[str] = None
++    dst_action_external_port: Optional[str] = None
++    dst_agent_id: Optional[str] = None
++    dst_association_strength: Optional[str] = None
++    dst_causality_actor_process_execution_time: Optional[str] = None
++    end_match_attempt_ts: Optional[str] = None
++    endpoint_id: Optional[str] = None
++    event_id: Optional[str] = None
++    event_sub_type: Optional[str] = None
++    event_timestamp: Optional[str] = None
++    event_type: Optional[str] = None
++    external_id: Optional[str] = None
++    filter_rule_id: Optional[str] = None
++    fw_app_category: Optional[str] = None
++    fw_app_id: Optional[str] = None
++    fw_app_subcategory: Optional[str] = None
++    fw_app_technology: Optional[str] = None
++    fw_device_name: Optional[str] = None
++    fw_email_recipient: Optional[str] = None
++    fw_email_sender: Optional[str] = None
++    fw_email_subject: Optional[str] = None
++    fw_interface_from: Optional[str] = None
++    fw_interface_to: Optional[str] = None
++    fw_is_phishing: Optional[str] = None
++    fw_misc: Optional[str] = None
++    fw_rule: Optional[str] = None
++    fw_rule_id: Optional[str] = None
++    fw_serial_number: Optional[str] = None
++    fw_url_domain: Optional[str] = None
++    fw_vsys: Optional[str] = None
++    fw_xff: Optional[str] = None
++    host_ip: Optional[str] = None
++    host_name: Optional[str] = None
++    is_whitelisted: Optional[bool] = None
++    local_insert_ts: Optional[int] = None
++    mac: Optional[str] = None
++    matching_service_rule_id: Optional[str] = None
++    matching_status: Optional[str] = None
++    mitre_tactic_id_and_name: Optional[str] = None
++    mitre_technique_id_and_name: Optional[str] = None
++    module_id: Optional[str] = None
++    name: Optional[str] = None
++    os_actor_causality_id: Optional[str] = None
++    os_actor_effective_username: Optional[str] = None
++    os_actor_process_causality_id: Optional[str] = None
++    os_actor_process_command_line: Optional[str] = None
++    os_actor_process_image_name: Optional[str] = None
++    os_actor_process_image_path: Optional[str] = None
++    os_actor_process_image_sha256: Optional[str] = None
++    os_actor_process_instance_id: Optional[str] = None
++    os_actor_process_os_pid: Optional[str] = None
++    os_actor_process_signature_status: Optional[str] = None
++    os_actor_process_signature_vendor: Optional[str] = None
++    os_actor_thread_thread_id: Optional[str] = None
++    severity: Optional[str] = None
++    source: Optional[str] = None
++    starred: Optional[bool] = None
++    story_id: Optional[str] = None
++    user_name: Optional[str] = None
+ 
+ 
+ class NetworkArtifactsDatum(BaseModel):
+-    alert_count: Optional[int]
+-    is_manual: Optional[bool]
+-    network_country: Optional[str]
+-    network_domain: Optional[str]
+-    network_remote_ip: Optional[str]
+-    network_remote_port: Optional[int]
+-    type: Optional[str]
++    alert_count: Optional[int] = None
++    is_manual: Optional[bool] = None
++    network_country: Optional[str] = None
++    network_domain: Optional[str] = None
++    network_remote_ip: Optional[str] = None
++    network_remote_port: Optional[int] = None
++    type: Optional[str] = None
+ 
+ 
+ class AlertDatums(BaseModel):
+-    total_count: Optional[int]
++    total_count: Optional[int] = None
+     data: List[AlertsDatum]
+ 
+ 
+ class NetworkArtifacts(BaseModel):
+-    total_count: Optional[int]
++    total_count: Optional[int] = None
+     data: List[NetworkArtifactsDatum]
+ 
+ 
+diff --git a/cortex_xdr_client/api/models/ioc.py b/cortex_xdr_client/api/models/ioc.py
+index 19a1d56..b5f2297 100644
+--- a/cortex_xdr_client/api/models/ioc.py
++++ b/cortex_xdr_client/api/models/ioc.py
+@@ -1,7 +1,7 @@
+ from enum import Enum
+ from typing import List, Optional, Union, Literal
+ 
+-from pydantic import BaseModel, Field
++from pydantic import BaseModel, ConfigDict, Field
+ 
+ 
+ class ValidationError(BaseModel):
+@@ -27,7 +27,7 @@ class IoCResponse(BaseModel):
+     IoC Response Model
+     Represents the response of the IoC API.
+     """
+-    reply: Optional[Union[IoCResponseItem, bool]]
++    reply: Optional[Union[IoCResponseItem, bool]] = None
+ 
+ 
+ class Reputation(str, Enum):
+@@ -51,8 +51,7 @@ class Vendor(BaseModel):
+     reliability: str
+     reputation: Reputation
+ 
+-    class Config:
+-        use_enum_values = True
++    model_config = ConfigDict(use_enum_values=True)
+ 
+ 
+ class IoCReliability(str, Enum):
+@@ -102,13 +101,12 @@ class IoC(BaseModel):
+     """
+     indicator: str
+     type: IoCType
+-    expiration_date: Optional[Union[int, Literal["Never"]]]
+-    comment: Optional[str]
+-    reputation: Optional[Reputation]
+-    reliability: Optional[IoCReliability]
++    expiration_date: Optional[Union[int, Literal["Never"]]] = None
++    comment: Optional[str] = None
++    reputation: Optional[Reputation] = None
++    reliability: Optional[IoCReliability] = None
+     severity: IoCSeverity
+-    vendors: Optional[List[Vendor]]
++    vendors: Optional[List[Vendor]] = None
+     class_: Optional[str] = Field(None, alias='class')
+ 
+-    class Config:
+-        use_enum_values = True
++    model_config = ConfigDict(use_enum_values=True)
+diff --git a/cortex_xdr_client/api/models/issues.py b/cortex_xdr_client/api/models/issues.py
+index d302de4..3e0397f 100644
+--- a/cortex_xdr_client/api/models/issues.py
++++ b/cortex_xdr_client/api/models/issues.py
+@@ -1,36 +1,35 @@
+ from typing import List, Optional
+ 
+-from pydantic import BaseModel, Field
++from pydantic import BaseModel, ConfigDict, Field
+ 
+ 
+ class Issue(BaseModel):
+-    id: Optional[int]
++    id: Optional[int] = None
+     insert_time: Optional[int] = Field(None, alias='_insert_time')
+-    external_id: Optional[str]
+-    name: Optional[str]
+-    description: Optional[str]
+-    observation_time: Optional[int]
+-    domain: Optional[str]
++    external_id: Optional[str] = None
++    name: Optional[str] = None
++    description: Optional[str] = None
++    observation_time: Optional[int] = None
++    domain: Optional[str] = None
+     detection_method: Optional[str] = Field(None, alias='detection.method')
+     detection_rule_id: Optional[str] = Field(None, alias='detection.rule_id')
+-    category: Optional[str]
+-    severity: Optional[str]
++    category: Optional[str] = None
++    severity: Optional[str] = None
+     status_progress: Optional[str] = Field(None, alias='status.progress')
+     status_resolution_reason: Optional[str] = Field(None, alias='status.resolution_reason')
+     status_resolution_comment: Optional[str] = Field(None, alias='status.resolution_comment')
+-    assigned_to: Optional[str]
+-    assigned_to_pretty: Optional[str]
+-    case_ids: Optional[List[int]]
+-    asset_ids: Optional[List[str]]
+-    asset_names: Optional[List[str]]
+-    tags: Optional[List[str]]
+-    normalized_fields: Optional[dict]
+-    custom_fields: Optional[dict]
+-    evidences: Optional[List[dict]]
+-    actions: Optional[List[dict]]
+-
+-    class Config:
+-        extra = 'allow'
++    assigned_to: Optional[str] = None
++    assigned_to_pretty: Optional[str] = None
++    case_ids: Optional[List[int]] = None
++    asset_ids: Optional[List[str]] = None
++    asset_names: Optional[List[str]] = None
++    tags: Optional[List[str]] = None
++    normalized_fields: Optional[dict] = None
++    custom_fields: Optional[dict] = None
++    evidences: Optional[List[dict]] = None
++    actions: Optional[List[dict]] = None
++
++    model_config = ConfigDict(extra='allow')
+ 
+ 
+ class GetIssuesResponseItem(BaseModel):
+diff --git a/cortex_xdr_client/api/models/scripts.py b/cortex_xdr_client/api/models/scripts.py
+index 03ea954..be597e8 100644
+--- a/cortex_xdr_client/api/models/scripts.py
++++ b/cortex_xdr_client/api/models/scripts.py
+@@ -5,78 +5,78 @@ from pydantic import BaseModel, StrictInt
+ 
+ 
+ class Script(BaseModel):
+-    script_id: Optional[Union[StrictInt, str]]
+-    name: Optional[str]
+-    description: Optional[str]
+-    modification_date: Optional[int]
+-    created_by: Optional[str]
+-    windows_supported: Optional[bool]
+-    linux_supported: Optional[bool]
+-    macos_supported: Optional[bool]
+-    is_high_risk: Optional[bool]
+-    script_uid: Optional[str]
++    script_id: Optional[Union[StrictInt, str]] = None
++    name: Optional[str] = None
++    description: Optional[str] = None
++    modification_date: Optional[int] = None
++    created_by: Optional[str] = None
++    windows_supported: Optional[bool] = None
++    linux_supported: Optional[bool] = None
++    macos_supported: Optional[bool] = None
++    is_high_risk: Optional[bool] = None
++    script_uid: Optional[str] = None
+ 
+ 
+ class GetScriptsResponse(BaseModel):
+-    total_count: Optional[int]
+-    result_count: Optional[int]
+-    scripts: Optional[List[Script]]
++    total_count: Optional[int] = None
++    result_count: Optional[int] = None
++    scripts: Optional[List[Script]] = None
+ 
+ 
+ class GetScriptsExecutionStatus(BaseModel):
+-    general_status: Optional[str]
+-    endpoints_pending: Optional[int]
+-    endpoints_canceled: Optional[int]
+-    endpoints_in_progress: Optional[int]
+-    endpoints_timeout: Optional[int]
+-    endpoints_failed: Optional[int]
+-    endpoints_completed_successfully: Optional[int]
+-    endpoints_pending_abort: Optional[int]
+-    endpoints_aborted: Optional[int]
+-    endpoints_expired: Optional[int]
++    general_status: Optional[str] = None
++    endpoints_pending: Optional[int] = None
++    endpoints_canceled: Optional[int] = None
++    endpoints_in_progress: Optional[int] = None
++    endpoints_timeout: Optional[int] = None
++    endpoints_failed: Optional[int] = None
++    endpoints_completed_successfully: Optional[int] = None
++    endpoints_pending_abort: Optional[int] = None
++    endpoints_aborted: Optional[int] = None
++    endpoints_expired: Optional[int] = None
+ 
+ 
+ class ScriptIO(BaseModel):
+-    name: Optional[str]
+-    value: Optional[str]
+-    type: Optional[str]
++    name: Optional[str] = None
++    value: Optional[str] = None
++    type: Optional[str] = None
+ 
+ 
+ class GetScriptMetadataResponse(BaseModel):
+-    script_id: Optional[Union[StrictInt, str]]
+-    name: Optional[str]
+-    description: Optional[str]
+-    modification_date: Optional[int]
+-    created_by: Optional[str]
+-    is_high_risk: Optional[bool]
+-    windows_supported: Optional[bool]
+-    linux_supported: Optional[bool]
+-    macos_supported: Optional[bool]
+-    script_uid: Optional[str]
+-    entry_point: Optional[str]
+-    script_input: Optional[List[ScriptIO]]
+-    script_output_type: Optional[str]
+-    script_output_dictionary_definitions: Optional[List[ScriptIO]]
++    script_id: Optional[Union[StrictInt, str]] = None
++    name: Optional[str] = None
++    description: Optional[str] = None
++    modification_date: Optional[int] = None
++    created_by: Optional[str] = None
++    is_high_risk: Optional[bool] = None
++    windows_supported: Optional[bool] = None
++    linux_supported: Optional[bool] = None
++    macos_supported: Optional[bool] = None
++    script_uid: Optional[str] = None
++    entry_point: Optional[str] = None
++    script_input: Optional[List[ScriptIO]] = None
++    script_output_type: Optional[str] = None
++    script_output_dictionary_definitions: Optional[List[ScriptIO]] = None
+ 
+ 
+ class ScriptExecutionResult(BaseModel):
+-    endpoint_name: Optional[str]
+-    endpoint_ip_address: Optional[List[str]]
+-    endpoint_status: Optional[str]
+-    domain: Optional[str]
+-    endpoint_id: Optional[str]
+-    execution_status: Optional[str]
+-    standard_output: Union[Optional[str], List[str]]
+-    retrieved_files: Optional[int]
+-    failed_files: Optional[int]
+-    retention_date: Optional[int]
++    endpoint_name: Optional[str] = None
++    endpoint_ip_address: Optional[List[str]] = None
++    endpoint_status: Optional[str] = None
++    domain: Optional[str] = None
++    endpoint_id: Optional[str] = None
++    execution_status: Optional[str] = None
++    standard_output: Union[Optional[str], List[str]] = None
++    retrieved_files: Optional[int] = None
++    failed_files: Optional[int] = None
++    retention_date: Optional[int] = None
+ 
+ 
+ class GetScriptExecutionResults(BaseModel):
+-    script_name: Optional[str]
+-    script_description: Optional[str]
+-    script_parameters: Optional[List[ScriptIO]]
+-    date_created: Optional[datetime]
+-    scope: Optional[str]
+-    error_message: Optional[str]
+-    results: Optional[List[ScriptExecutionResult]]
++    script_name: Optional[str] = None
++    script_description: Optional[str] = None
++    script_parameters: Optional[List[ScriptIO]] = None
++    date_created: Optional[datetime] = None
++    scope: Optional[str] = None
++    error_message: Optional[str] = None
++    results: Optional[List[ScriptExecutionResult]] = None
+diff --git a/cortex_xdr_client/api/scripts_api.py b/cortex_xdr_client/api/scripts_api.py
+index 5318bc7..b916d7c 100644
+--- a/cortex_xdr_client/api/scripts_api.py
++++ b/cortex_xdr_client/api/scripts_api.py
+@@ -88,7 +88,7 @@ class ScriptsAPI(BaseAPI):
+             raise InvalidResponseException(response, ["reply"])
+         reply = resp_json["reply"]
+ 
+-        return GetScriptsResponse.parse_obj(reply)
++        return GetScriptsResponse.model_validate(reply)
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/script-execution/get-script-metadata.html
+     def get_script_metadata(self, script_uid: str) -> Optional[GetScriptMetadataResponse]:
+@@ -104,7 +104,7 @@ class ScriptsAPI(BaseAPI):
+         if "reply" not in resp_json:
+             raise InvalidResponseException(response, ["reply"])
+         reply = resp_json["reply"]
+-        return GetScriptMetadataResponse.parse_obj(reply)
++        return GetScriptMetadataResponse.model_validate(reply)
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/script-execution/get-script-execution-status.html
+     def get_script_execution_status(self, action_id: int) -> Optional[GetScriptsExecutionStatus]:
+@@ -120,7 +120,7 @@ class ScriptsAPI(BaseAPI):
+         if "reply" not in resp_json:
+             raise InvalidResponseException(response, ["reply"])
+         reply = resp_json["reply"]
+-        return GetScriptsExecutionStatus.parse_obj(reply)
++        return GetScriptsExecutionStatus.model_validate(reply)
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/script-execution/get-script-execution-results.html
+     def get_script_execution_results(self, action_id: int) -> Optional[GetScriptExecutionResults]:
+@@ -138,7 +138,7 @@ class ScriptsAPI(BaseAPI):
+         for result in reply.get('results') or []:
+             if result.get('_return_value') is not None:
+                 result['standard_output'] = result['_return_value']
+-        return GetScriptExecutionResults.parse_obj(reply)
++        return GetScriptExecutionResults.model_validate(reply)
+ 
+     # https://docs.paloaltonetworks.com/cortex/cortex-xdr/cortex-xdr-api/cortex-xdr-apis/script-execution/get-script-execution-result-files.html
+     def get_script_execution_result_files(self, action_id: int, endpoint_id: str) -> Optional[str]:
