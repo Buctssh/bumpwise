@@ -24,7 +24,7 @@ htmlcov/
 # 克隆下来的目标仓库（每个仓库带自己的 .venv）
 workspace/
 # agent 的执行轨迹、日志
-runs/
+/runs/
 *.log
 # 评测结果（评测任务定义本身要提交，不要忽略 eval/ 整个目录）
 eval/results/
