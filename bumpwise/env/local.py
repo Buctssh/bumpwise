@@ -111,6 +111,12 @@ class LocalEnvironment:
         except subprocess.TimeoutExpired:
             out = _stop_and_collect(proc)
             timed_out = True
+        except BaseException:
+            # 等待期间被打断 (最常见的是人按了 Ctrl+C, 产生 KeyboardInterrupt).
+            # 子进程在独立的进程组里, 收不到终端上的 Ctrl+C, 不处理的话会在后台继续运行, 甚至继续修改文件.
+            # 人按 Ctrl+C 是想立刻停下, 所以直接强制终止整棵进程树, 不走两阶段终止的宽限期, 然后把异常继续抛出去
+            _kill_tree(proc)
+            raise
 
         # 封装执行结果返回
         return ExecResult(

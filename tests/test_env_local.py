@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -74,6 +75,31 @@ def test_exec_timeout_lets_process_clean_up(env, tmp_path):
     assert result.timed_out is True
     assert "started" in result.output
     assert "cleaned-up" in result.output
+
+
+def test_ctrl_c_kills_whole_process_tree(env, tmp_path, monkeypatch):
+    # 子进程在独立的进程组里, 收不到终端上的 Ctrl+C. 等待命令时被 Ctrl+C 打断, 必须由我们终止整棵进程树,
+    # 否则命令会在后台继续运行. 这里让 communicate 等 1 秒 (确保 python 已经启动), 然后模拟按下 Ctrl+C
+    real_communicate = subprocess.Popen.communicate
+    interrupted = False
+
+    def communicate_then_ctrl_c(self, input=None, timeout=None):
+        nonlocal interrupted
+        if interrupted:  # 只打断第一次: 终止进程树时 taskkill 也会用到 communicate
+            return real_communicate(self, input, timeout)
+        interrupted = True
+        try:
+            real_communicate(self, input, timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(subprocess.Popen, "communicate", communicate_then_ctrl_c)
+    with pytest.raises(KeyboardInterrupt):
+        env.exec("python -c \"import time, pathlib; time.sleep(2); pathlib.Path('late.txt').write_text('x')\"", timeout=30)
+    monkeypatch.undo()
+    time.sleep(3)
+    assert not (tmp_path / "late.txt").exists()
 
 
 def test_exec_disables_interactive_prompts(env):
