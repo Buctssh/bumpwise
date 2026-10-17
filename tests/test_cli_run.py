@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import bumpwise.__main__ as cli
+import bumpwise.cli.run as cli_run
+from bumpwise.cli import main
 from bumpwise.config import Settings
 from bumpwise.llm import LLMResponse
 
@@ -54,12 +55,12 @@ def fake_llm(monkeypatch, tmp_path):
     """替换掉读取配置和创建模型客户端这两步: 测试不读取 .env, 不联网. 运行记录写到临时目录, 不写进真实的 runs/"""
     settings = Settings(provider="fake", api_format="anthropic", api_key=FAKE_KEY, base_url=None,
                         model="fake-model", runs_dir=tmp_path / "runs")
-    monkeypatch.setattr(cli.Settings, "from_env", lambda: settings)
+    monkeypatch.setattr(cli_run.Settings, "from_env", lambda: settings)
     holder: dict[str, FakeLLM] = {}
 
     def use(*responses: LLMResponse) -> FakeLLM:
         holder["llm"] = FakeLLM(*responses)
-        monkeypatch.setattr(cli, "create_llm_client", lambda s: holder["llm"])
+        monkeypatch.setattr(cli_run, "create_llm_client", lambda s: holder["llm"])
         return holder["llm"]
 
     return use
@@ -71,7 +72,7 @@ def run_args(repo: Path, *extra: str) -> list[str]:
 
 def test_finished_run(repo, fake_llm, capsys):
     llm = fake_llm(edit("app.py", "x = 1", "x = 2"), reply("结论: 已完成"))
-    assert cli.main(run_args(repo)) == 0
+    assert main(run_args(repo)) == 0
 
     out = capsys.readouterr().out
     assert "只在可信的仓库上运行" in out          # 启动时的警告
@@ -89,36 +90,36 @@ def test_finished_run(repo, fake_llm, capsys):
 
 def test_needs_human_exit_code(repo, fake_llm):
     fake_llm(reply("需要人工处理\n原因是 ..."))
-    assert cli.main(run_args(repo)) == cli.EXIT_CODES[cli.Status.NEEDS_HUMAN]
+    assert main(run_args(repo)) == cli_run.EXIT_CODES[cli_run.Status.NEEDS_HUMAN]
 
 
 def test_max_turns_option(repo, fake_llm, capsys):
     fake_llm(edit("app.py", "x = 1", "x = 2"))
-    assert cli.main(run_args(repo, "--max-turns", "1")) == cli.EXIT_CODES[cli.Status.MAX_TURNS]
+    assert main(run_args(repo, "--max-turns", "1")) == cli_run.EXIT_CODES[cli_run.Status.MAX_TURNS]
     assert "最多调用 1 次" in capsys.readouterr().out
 
 
 def test_denied_call_is_shown(repo, fake_llm, capsys):
     fake_llm(edit("tests/test_a.py", "a", "b"), reply("完成"))
-    cli.main(run_args(repo))
+    main(run_args(repo))
     assert "被权限策略拒绝: protect-tests" in capsys.readouterr().out
 
 
 def test_not_a_git_repo(tmp_path, fake_llm, capsys):
     fake_llm()
-    assert cli.main(run_args(tmp_path)) == 1
+    assert main(run_args(tmp_path)) == 1
     assert "git rev-parse HEAD 执行失败" in capsys.readouterr().err
 
 
 def test_missing_repo(tmp_path, fake_llm, capsys):
     fake_llm()
-    assert cli.main(run_args(tmp_path / "nope")) == 1
+    assert main(run_args(tmp_path / "nope")) == 1
     assert "工作目录不存在" in capsys.readouterr().err
 
 
 def test_missing_python(repo, fake_llm, capsys):
     fake_llm()
-    assert cli.main(run_args(repo, "--python", str(repo / "no_python.exe"))) == 1
+    assert main(run_args(repo, "--python", str(repo / "no_python.exe"))) == 1
     assert "--python" in capsys.readouterr().err
 
 
@@ -126,26 +127,26 @@ def test_settings_error_is_shown_without_traceback(repo, monkeypatch, capsys):
     def broken():
         raise RuntimeError("缺少 DEEPSEEK_API_KEY")
 
-    monkeypatch.setattr(cli.Settings, "from_env", broken)
-    assert cli.main(run_args(repo)) == 1
+    monkeypatch.setattr(cli_run.Settings, "from_env", broken)
+    assert main(run_args(repo)) == 1
     assert "缺少 DEEPSEEK_API_KEY" in capsys.readouterr().err
 
 
 def test_dirty_worktree_warning(repo, fake_llm, capsys):
     (repo / "app.py").write_text("x = 3\n", encoding="utf-8")
     fake_llm(reply("完成"))
-    cli.main(run_args(repo))
+    main(run_args(repo))
     assert "已经有未提交的改动" in capsys.readouterr().out
 
 
 def test_missing_required_args():
     with pytest.raises(SystemExit) as e:
-        cli.main(["run", "--repo", "."])
+        main(["run", "--repo", "."])
     assert e.value.code == 2
 
 
 def test_every_status_has_exit_code():
-    assert set(cli.EXIT_CODES) == set(cli.Status)
+    assert set(cli_run.EXIT_CODES) == set(cli_run.Status)
 
 
 # ---------------------------------------------------------------- 运行记录 (V2)
@@ -166,7 +167,7 @@ def test_run_writes_trace(repo, fake_llm, tmp_path):
     first = edit("app.py", "x = 1", "x = 2")
     first.content.insert(0, thinking)
     fake_llm(first, write("新文件.py", "y = 1"), reply("结论: 已完成"))
-    assert cli.main(run_args(repo)) == 0
+    assert main(run_args(repo)) == 0
 
     run_dir = only_run_dir(tmp_path)
     meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
@@ -193,7 +194,7 @@ def test_run_writes_trace(repo, fake_llm, tmp_path):
 
 def test_diff_includes_new_files_with_readable_names(repo, fake_llm, tmp_path):
     fake_llm(edit("app.py", "x = 1", "x = 2"), write("新文件.py", "y = 1"), reply("完成"))
-    cli.main(run_args(repo))
+    main(run_args(repo))
     run_dir = only_run_dir(tmp_path)
     diff = (run_dir / "diff.patch").read_text(encoding="utf-8")
     assert "+x = 2" in diff
@@ -206,7 +207,7 @@ def test_diff_includes_new_files_with_readable_names(repo, fake_llm, tmp_path):
 def test_secrets_are_redacted_in_trace(repo, fake_llm, tmp_path):
     # 模拟最坏的情况: 模型的回复里出现了密钥 (比如它用 run_command 读到了仓库外面的 .env)
     fake_llm(reply(f"结论: 已完成, 顺便看到了 {FAKE_KEY}"))
-    cli.main(run_args(repo))
+    main(run_args(repo))
     run_dir = only_run_dir(tmp_path)
     for path in run_dir.rglob("*"):
         if path.is_file():
@@ -219,10 +220,10 @@ def test_crash_is_recorded(repo, fake_llm, tmp_path, monkeypatch):
     def broken(*args):
         raise RuntimeError("写 diff 失败")
 
-    monkeypatch.setattr(cli, "_workspace_diff", broken)
+    monkeypatch.setattr(cli_run, "_workspace_diff", broken)
     fake_llm(reply("完成"))
     with pytest.raises(RuntimeError):
-        cli.main(run_args(repo))
+        main(run_args(repo))
     meta = json.loads((only_run_dir(tmp_path) / "meta.json").read_text(encoding="utf-8"))
     assert meta["status"] == "crashed"
     assert "写 diff 失败" in meta["error"]
@@ -234,9 +235,9 @@ def test_broken_printer_does_not_stop_the_run(repo, fake_llm, tmp_path, monkeypa
         def __call__(self, event, data):
             raise RuntimeError("打印失败")
 
-    monkeypatch.setattr(cli, "ProgressPrinter", BrokenPrinter)
+    monkeypatch.setattr(cli_run, "ProgressPrinter", BrokenPrinter)
     fake_llm(reply("完成"))
-    assert cli.main(run_args(repo)) == 0
+    assert main(run_args(repo)) == 0
     assert "BrokenPrinter" in capsys.readouterr().err
     assert json.loads((only_run_dir(tmp_path) / "meta.json").read_text(encoding="utf-8"))["status"] == "finished"
 
@@ -245,10 +246,10 @@ def test_show_command(repo, fake_llm, tmp_path, capsys):
     first = edit("app.py", "x = 1", "x = 2")
     first.content.insert(0, {"type": "thinking", "thinking": "我打算先修改 app.py", "signature": "s"})
     fake_llm(first, reply("结论: 已完成"))
-    cli.main(run_args(repo))
+    main(run_args(repo))
     capsys.readouterr()
 
-    assert cli.main(["show", str(only_run_dir(tmp_path))]) == 0
+    assert main(["show", str(only_run_dir(tmp_path))]) == 0
     out = capsys.readouterr().out
     assert "[第 1 轮]" in out and "[第 2 轮]" in out
     assert "我打算先修改 app.py" in out  # 能看到模型的思考
@@ -257,5 +258,5 @@ def test_show_command(repo, fake_llm, tmp_path, capsys):
 
 
 def test_show_rejects_a_dir_that_is_not_a_run(tmp_path, capsys):
-    assert cli.main(["show", str(tmp_path)]) == 1
+    assert main(["show", str(tmp_path)]) == 1
     assert "找不到 meta.json" in capsys.readouterr().err

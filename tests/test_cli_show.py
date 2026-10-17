@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from bumpwise.harness.trace import TraceWriter
-from bumpwise.trace_view import render_run
+from bumpwise.cli.show import render_run
 
 META = {
     "run_id": "run-1",

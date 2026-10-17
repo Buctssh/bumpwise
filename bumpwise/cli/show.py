@@ -1,16 +1,53 @@
-"""把一次运行的 trace 整理成可读的文本: python -m bumpwise show <运行目录>
+"""show 命令: 把一次运行的 trace 整理成可读的文本. python -m bumpwise show <运行目录>
 
 终端上的进度只显示每段内容的前 200 个字符, 这里显示完整的内容 (包括模型的 thinking), 以及按轮次统计的上下文长度和耗时.
 只读取 trace 的文件, 不依赖运行时的任何对象: 换一台机器, 或者 harness 的代码改了以后, 旧的记录也能查看.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from .harness.trace import load_events, load_meta
+from ..harness.trace import load_events, load_meta
+from .errors import SetupError
+
+
+def add_parser(commands: argparse._SubParsersAction) -> None:
+    show = commands.add_parser("show", help="查看一次运行的完整记录")
+    show.add_argument("run_dir", type=Path, help="运行记录的目录, 例如 runs/20261017-120000-cortex-v1-ab12")
+    show.add_argument("--full", action="store_true", help="显示完整的内容, 不截断")
+
+
+def execute(args: argparse.Namespace) -> int:
+    # 路径写错时 (比如少写了一层目录), 给出一句清楚的提示, 而不是 FileNotFoundError 加一大段调用栈
+    if not (args.run_dir / "meta.json").is_file():
+        raise SetupError(f"{args.run_dir} 不是一次运行的记录 (找不到 meta.json)")
+    text = render_run(args.run_dir, max_chars=None if args.full else 1500)
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except OSError:
+        # 输出接到 head 这类命令时, 对方读够了就会关闭管道, 这不是错误. POSIX 上是 BrokenPipeError,
+        # Windows 上可能是 OSError (errno 22). 按 Python 文档的建议, 把 stdout 指向 devnull,
+        # 否则解释器退出时还会再 flush 一次, 又报一次错
+        _silence_stdout()
+    return 0
+
+
+def _silence_stdout() -> None:
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+    except (OSError, ValueError):
+        pass  # stdout 不是真正的文件 (比如测试里被替换掉了), 不需要处理
+
+
+# ============================================================================ 整理成文本
 
 
 def _clip(text: str, limit: int | None) -> str:
