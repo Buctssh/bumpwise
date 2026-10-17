@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import os
 import subprocess
 import sys
 import traceback
@@ -332,8 +333,24 @@ def show(args: argparse.Namespace) -> int:
     # 路径写错时 (比如少写了一层目录), 给出一句清楚的提示, 而不是 FileNotFoundError 加一大段调用栈
     if not (args.run_dir / "meta.json").is_file():
         raise SetupError(f"{args.run_dir} 不是一次运行的记录 (找不到 meta.json)")
-    print(render_run(args.run_dir, max_chars=None if args.full else 1500), end="")
+    text = render_run(args.run_dir, max_chars=None if args.full else 1500)
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except OSError:
+        # 输出接到 head 这类命令时, 对方读够了就会关闭管道, 这不是错误. POSIX 上是 BrokenPipeError,
+        # Windows 上可能是 OSError (errno 22). 按 Python 文档的建议, 把 stdout 指向 devnull,
+        # 否则解释器退出时还会再 flush 一次, 又报一次错
+        _silence_stdout()
     return 0
+
+
+def _silence_stdout() -> None:
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+    except (OSError, ValueError):
+        pass  # stdout 不是真正的文件 (比如测试里被替换掉了), 不需要处理
 
 
 def main(argv: list[str] | None = None) -> int:

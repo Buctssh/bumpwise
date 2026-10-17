@@ -113,3 +113,23 @@ def test_old_or_unknown_records_do_not_break_the_view(make_run):
     out = render_run(make_run([("llm_response", old), ("something_new", {"x": 1})], {"run_id": "old", "status": "finished"}))
     assert "[第 1 轮] 0.0s  上下文 50 tokens" in out
     assert "something_new" not in out
+
+
+def test_show_exits_quietly_when_the_pipe_is_closed(make_run):
+    # python -m bumpwise show ... | head: head 读够了就关闭管道, show 不能因此打印一段调用栈
+    import subprocess
+    import sys
+
+    from bumpwise.config import PROJECT_ROOT
+
+    events = [("llm_response", llm_response(i, [{"type": "text", "text": "x" * 200}])) for i in range(1, 400)]
+    run_dir = make_run(events)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "bumpwise", "show", str(run_dir)],
+        cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    proc.stdout.read(100)
+    proc.stdout.close()  # 模拟 head 只读了开头就退出
+    stderr = proc.stderr.read().decode("utf-8", errors="replace")
+    assert proc.wait(timeout=60) == 0
+    assert "Traceback" not in stderr
