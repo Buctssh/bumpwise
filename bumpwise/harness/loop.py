@@ -58,8 +58,10 @@ class RunResult:
     turns: int                      # 调用了多少次模型
     tool_calls: int                 # 模型请求了多少次工具调用(包括被拒绝的)
     denied_calls: int               # 其中被权限策略拒绝的次数
-    input_tokens: int               
+    input_tokens: int               # 输入中没有命中缓存的部分
     output_tokens: int
+    cache_read_tokens: int          # 输入中命中缓存的部分
+    cache_write_tokens: int         # 输入中写入缓存的部分
     messages: list[dict[str, Any]]  # 完整的对话历史, 用于排查问题, V2 会写进 trace
     error: str = ""                 # 非正常停止时的说明
 
@@ -78,6 +80,8 @@ class _Run:
     denied_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     final_text: str = ""
     errors: list[str] = field(default_factory=list)
 
@@ -118,6 +122,8 @@ class AgentLoop:
             denied_calls=run.denied_calls,
             input_tokens=run.input_tokens,
             output_tokens=run.output_tokens,
+            cache_read_tokens=run.cache_read_tokens,
+            cache_write_tokens=run.cache_write_tokens,
             messages=run.messages,
             error=error,
         )
@@ -140,6 +146,8 @@ class AgentLoop:
 
             run.input_tokens += response.input_tokens
             run.output_tokens += response.output_tokens
+            run.cache_read_tokens += response.cache_read_tokens
+            run.cache_write_tokens += response.cache_write_tokens
             run.final_text = response.text
             self._emit("llm_response", {
                 "turn": run.turns,
@@ -148,6 +156,8 @@ class AgentLoop:
                 "tool_calls": len(response.tool_uses),
                 "input_tokens": response.input_tokens,
                 "output_tokens": response.output_tokens,
+                "cache_read_tokens": response.cache_read_tokens,
+                "cache_write_tokens": response.cache_write_tokens,
             })
 
             # 回复被截断: 里面的工具调用可能只写了一半 (参数不完整), 一律不执行

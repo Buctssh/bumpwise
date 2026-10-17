@@ -10,8 +10,17 @@ class LLMResponse:
 
     content: list[dict[str, Any]]   # 回复的内容块
     stop_reason: str | None         # 停止的原因
-    input_tokens: int = 0           # 输入消耗的 token 数
-    output_tokens: int = 0          # 输出消耗的 token 数
+    input_tokens: int = 0           # 输入中没有命中缓存的 token 数
+    output_tokens: int = 0          # 输出的 token 数
+    # 服务商会缓存请求的前缀 (system prompt, 工具定义, 之前的历史), 命中缓存的部分不计入 input_tokens.
+    # 完整的输入 = input_tokens + cache_read_tokens + cache_write_tokens
+    cache_read_tokens: int = 0      # 输入中命中缓存的 token 数 (价格通常只有正常输入的一小部分)
+    cache_write_tokens: int = 0     # 输入中这次新写入缓存的 token 数
+
+    @property
+    def total_input_tokens(self) -> int:
+        """完整的输入 token 数, 包括命中缓存和写入缓存的部分"""
+        return self.input_tokens + self.cache_read_tokens + self.cache_write_tokens
 
     @property
     def tool_uses(self) -> list[dict[str, Any]]:

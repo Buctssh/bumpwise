@@ -33,5 +33,8 @@ class AnthropicClient:
             content=[block.model_dump(exclude_none=True) for block in resp.content],
             stop_reason=resp.stop_reason,
             input_tokens=getattr(usage, "input_tokens", 0) or 0,
-            output_tokens=getattr(usage, "output_tokens", 0) or 0
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+            # 命中缓存的部分不计入 input_tokens, 要单独读取. 不读的话, 统计到的输入会严重偏低 (见 docs/v1/runs/001-cortex.md)
+            cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+            cache_write_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
         )

@@ -113,6 +113,15 @@ def test_tokens_are_summed(make_loop):
     assert (result.input_tokens, result.output_tokens) == (20, 10)
 
 
+def test_cache_tokens_are_summed_separately(make_loop):
+    # 运行 001: 命中缓存的部分不计入 input_tokens, 只统计 input_tokens 会严重偏低
+    cached = LLMResponse(content=[{"type": "text", "text": "完成"}], stop_reason="end_turn",
+                         input_tokens=100, output_tokens=5, cache_read_tokens=3000, cache_write_tokens=200)
+    result = make_loop(FakeLLM(cached)).run("system", "任务")
+    assert (result.input_tokens, result.cache_read_tokens, result.cache_write_tokens) == (100, 3000, 200)
+    assert cached.total_input_tokens == 3300
+
+
 def test_bad_tool_input_does_not_crash(make_loop):
     bad = LLMResponse(content=[{"type": "tool_use", "id": "c", "name": "read_file", "input": "a.txt"}], stop_reason="tool_use")
     llm = FakeLLM(bad, text("完成"))
