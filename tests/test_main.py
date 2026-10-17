@@ -239,3 +239,23 @@ def test_broken_printer_does_not_stop_the_run(repo, fake_llm, tmp_path, monkeypa
     assert cli.main(run_args(repo)) == 0
     assert "BrokenPrinter" in capsys.readouterr().err
     assert json.loads((only_run_dir(tmp_path) / "meta.json").read_text(encoding="utf-8"))["status"] == "finished"
+
+
+def test_show_command(repo, fake_llm, tmp_path, capsys):
+    first = edit("app.py", "x = 1", "x = 2")
+    first.content.insert(0, {"type": "thinking", "thinking": "我打算先修改 app.py", "signature": "s"})
+    fake_llm(first, reply("结论: 已完成"))
+    cli.main(run_args(repo))
+    capsys.readouterr()
+
+    assert cli.main(["show", str(only_run_dir(tmp_path))]) == 0
+    out = capsys.readouterr().out
+    assert "[第 1 轮]" in out and "[第 2 轮]" in out
+    assert "我打算先修改 app.py" in out  # 能看到模型的思考
+    assert "-> edit_file" in out
+    assert "状态 finished" in out
+
+
+def test_show_rejects_a_dir_that_is_not_a_run(tmp_path, capsys):
+    assert cli.main(["show", str(tmp_path)]) == 1
+    assert "找不到 meta.json" in capsys.readouterr().err
