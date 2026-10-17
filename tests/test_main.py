@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -72,9 +73,13 @@ def test_finished_run(repo, fake_llm, capsys):
     assert "-> edit_file(" in out                  # 进度
     assert "结束: finished" in out
     assert "M app.py" in out                       # 工作区的改动
+    assert ".bumpwise" not in out                  # 临时目录不算改动
+    assert (repo / ".bumpwise" / ".gitignore").is_file()
     assert (repo / "app.py").read_text(encoding="utf-8") == "x = 2\n"
     # system prompt 里填入了环境和规则
-    assert "pydantic" in llm.systems[0] and "$" not in llm.systems[0]
+    assert "pydantic" in llm.systems[0]
+    assert not re.search(r"\$\{?[A-Za-z_]", llm.systems[0])  # 没有残留的占位符
+    assert ".bumpwise/" in llm.systems[0]
 
 
 def test_needs_human_exit_code(repo, fake_llm):

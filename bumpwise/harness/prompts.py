@@ -13,8 +13,19 @@ from ..env import EnvironmentInfo
 
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
 
-SYSTEM_PROMPT = "system_v1"
+# v2 的改动来自运行 001 中发现的问题, 见 docs/v1/runs/001-cortex.md. v1 保留, 用于对照
+SYSTEM_PROMPT = "system_v2"
 TASK_PROMPT = "task_v1"
+
+# 每种 shell 下可以用什么命令. 运行 001 中, 模型在 cmd.exe 里习惯性地使用 head, 而 prompt 还要求使用不存在的 rg.
+# 搜索代码统一推荐 git grep: 每个平台都有, 而且会跳过被 git 忽略的文件 (比如 .venv), 输出不会被第三方库的代码淹没
+SHELL_NOTES = {
+    "cmd.exe": (
+        "这是 Windows 的 cmd.exe: 没有 grep, head, tail, rg 这些命令, 也不支持 heredoc (<<) 和 $(...). "
+        "搜索代码用 git grep -n, 例如 git grep -n \"import requests\"; 列出文件用 git ls-files; 多条命令用 && 连接."
+    ),
+    "/bin/sh": "这是 POSIX shell. 搜索代码推荐用 git grep -n, 它会跳过被 git 忽略的文件.",
+}
 
 
 class PromptError(Exception):
@@ -62,11 +73,22 @@ def bullet_list(lines: Iterable[str]) -> str:
     return "\n".join(f"- {line}" for line in lines)
 
 
-def build_system_prompt(env_info: EnvironmentInfo, rules: Iterable[str], prompts_dir: Path = PROMPTS_DIR) -> RenderedPrompt:
-    """渲染 system prompt: 填入环境信息和权限规则"""
+def build_system_prompt(
+    env_info: EnvironmentInfo,
+    rules: Iterable[str],
+    scratch_dir: str,
+    prompts_dir: Path = PROMPTS_DIR,
+) -> RenderedPrompt:
+    """渲染 system prompt: 填入环境信息, 临时目录和权限规则"""
     return render(
         SYSTEM_PROMPT,
-        {"os_name": env_info.os_name, "shell": env_info.shell, "rules": bullet_list(rules)},
+        {
+            "os_name": env_info.os_name,
+            "shell": env_info.shell,
+            "shell_notes": SHELL_NOTES.get(env_info.shell, ""),
+            "scratch_dir": scratch_dir,
+            "rules": bullet_list(rules),
+        },
         prompts_dir,
     )
 

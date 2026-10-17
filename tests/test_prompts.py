@@ -92,7 +92,7 @@ def test_bullet_list():
 @pytest.fixture
 def system_prompt():
     rules = RulePolicy(protected_packages=["pydantic"]).describe()
-    return build_system_prompt(WINDOWS, rules)
+    return build_system_prompt(WINDOWS, rules, ".bumpwise")
 
 
 def test_system_prompt_has_environment_and_rules(system_prompt):
@@ -101,6 +101,24 @@ def test_system_prompt_has_environment_and_rules(system_prompt):
     assert "cmd.exe" in text
     assert "- 不能修改测试文件" in text
     assert "pydantic" in text
+
+
+def test_system_prompt_has_scratch_dir_and_shell_notes(system_prompt):
+    text = system_prompt.text
+    assert "python .bumpwise/check.py" in text
+    assert "git grep -n" in text
+    assert "用 rg" not in text  # 运行 001: prompt 要求用 rg 搜索, 但环境里没有 rg
+
+
+def test_unknown_shell_has_no_notes():
+    prompt = build_system_prompt(EnvironmentInfo(os_name="Plan9", shell="rc"), [], ".bumpwise")
+    assert "rc 执行" in prompt.text
+
+
+def test_system_v1_is_kept_for_comparison():
+    # v1 不再被代码使用, 但保留下来, 用于和 v2 对照. 确认它没有被意外修改坏
+    prompt = render("system_v1", {"os_name": "Windows", "shell": "cmd.exe", "rules": "- x"})
+    assert "用 rg 搜索" in prompt.text
 
 
 def test_real_templates_leave_no_placeholders(system_prompt):

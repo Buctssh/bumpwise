@@ -33,6 +33,11 @@ LOCAL_ENV_WARNING = (
 
 DEFAULT_STATE = "目标依赖已经安装为新版本, 源代码还没有针对新版本做任何修改."
 
+# agent 的临时目录 (相对于仓库根目录): 放实验脚本这类不属于改动的文件.
+# 目录里放一个内容为 * 的 .gitignore, 整个目录就会被 git 忽略, 不会出现在 git status 里,
+# 也不需要修改仓库自己的 .gitignore 或 .git/info/exclude (worktree 的 .git 是一个文件, info/exclude 不在工作目录里)
+SCRATCH_DIR = ".bumpwise"
+
 # 退出码: 让脚本和流水线 (V3) 不用解析输出, 就能知道这次运行是怎么结束的.
 # 1 留给程序崩溃 (Python 未捕获异常的默认退出码), 2 留给参数错误 (argparse 的默认退出码),
 # 130 = 128 + SIGINT 的编号 2, 是 shell 里"被 Ctrl+C 中断"的惯例
@@ -87,8 +92,8 @@ class ProgressPrinter:
 
     def __call__(self, event: str, data: dict[str, Any]) -> None:
         if event == "llm_response":
-            print(f"\n[第 {data['turn']} 轮] 输入 {data['input_tokens']} / 输出 {data['output_tokens']} tokens, "
-                  f"停止原因 {data['stop_reason']}")
+            print(f"\n[第 {data['turn']} 轮] 输入 {data['input_tokens']} (缓存命中 {data['cache_read_tokens']}) "
+                  f"/ 输出 {data['output_tokens']} tokens, 停止原因 {data['stop_reason']}")
             if data["text"].strip():
                 print(f"  模型: {_preview(data['text'])}")
         elif event == "tool_call":
@@ -96,7 +101,8 @@ class ProgressPrinter:
             if data["decision"] != "allow":
                 print(f"     [被权限策略拒绝: {data['rule']}]")
         elif event == "tool_result":
-            mark = "失败" if data["is_error"] else "完成"
+            # "返回"而不是"完成": 工具执行成功, 不代表命令成功了 (比如测试失败时退出码不为 0)
+            mark = "失败" if data["is_error"] else "返回"
             print(f"     {mark}: {_preview(data['content'])}")
         # flush: 输出被重定向到文件或管道时, 也能实时看到进度
         sys.stdout.flush()
@@ -112,6 +118,11 @@ def _git(env: Environment, args: str) -> str:
     return result.output.strip()
 
 
+def _prepare_scratch_dir(env: Environment) -> None:
+    """创建 agent 的临时目录, 并让 git 忽略它"""
+    env.write_bytes(f"{SCRATCH_DIR}/.gitignore", b"*\n")
+
+
 def _check_python(python: Path | None) -> None:
     if python is not None and not python.is_file():
         raise SetupError(f"找不到 --python 指定的文件: {python}")
@@ -121,7 +132,8 @@ def _print_summary(result: RunResult, env: Environment, start_head: str) -> None
     print("\n" + "=" * 60)
     print(f"结束: {result.status.value}" + (f" ({result.error})" if result.error else ""))
     print(f"调用模型 {result.turns} 次, 工具调用 {result.tool_calls} 次 (被拒绝 {result.denied_calls} 次), "
-          f"tokens: 输入 {result.input_tokens} / 输出 {result.output_tokens}")
+          f"tokens: 输入 {result.input_tokens} + 缓存命中 {result.cache_read_tokens} "
+          f"+ 写入缓存 {result.cache_write_tokens} / 输出 {result.output_tokens}")
 
     # HEAD 变了, 说明有提交发生. 权限策略禁止了 git commit, 这里再检查一次: 不相信 agent, 也不完全相信策略
     head = _git(env, "rev-parse HEAD")
@@ -161,8 +173,9 @@ def run(args: argparse.Namespace) -> int:
         if _git(env, "status --short"):
             print("警告: 工作区里已经有未提交的改动, 结束时显示的改动会包含它们.")
 
+        _prepare_scratch_dir(env)
         policy = RulePolicy(protected_packages=[args.package])
-        system = build_system_prompt(env.describe(), policy.describe())
+        system = build_system_prompt(env.describe(), policy.describe(), SCRATCH_DIR)
         task = build_task_message(args.package, args.target, args.state, args.test_command, args.notes)
 
         print(LOCAL_ENV_WARNING)
