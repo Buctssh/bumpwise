@@ -24,7 +24,8 @@
 | [ADR-010](#adr-010-prompt-模板化版本化可复现) | prompt 模板化, 版本化, 可复现 | `prompts/`, `harness/prompts.py` | 已采纳 |
 | [ADR-011](#adr-011-agent-循环失败也是一种结果) | agent 循环: 失败也是一种结果 | `harness/loop.py` | 已采纳 |
 | [ADR-012](#adr-012-上下文压缩推迟到有-trace-数据之后) | 上下文压缩推迟到有 trace 数据之后 | — | 已采纳 |
-| [ADR-013](#adr-013-trace-用文件记录通过互相隔离的事件回调写入) | trace: 用文件记录, 通过互相隔离的事件回调写入 | `harness/trace.py`, `harness/loop.py`, `trace_view.py` | 已采纳 |
+| [ADR-013](#adr-013-trace-用文件记录通过互相隔离的事件回调写入) | trace: 用文件记录, 通过互相隔离的事件回调写入 | `harness/trace.py`, `harness/loop.py`, `cli/show.py` | 已采纳 |
+| [ADR-014](#adr-014-按层分包依赖只能从上往下) | 按层分包, 依赖只能从上往下 | 全部, `tests/test_architecture.py` | 已采纳 |
 
 最后一节是[已知的局限](#已知的局限), 列出现在明确知道, 但有意留到以后解决的问题.
 
@@ -340,6 +341,55 @@ V1 的两次运行 ([docs/v1/runs/](v1/runs/)) 只能看到终端上每段内容
 - 每个订阅者都深拷贝一次事件, 多占一些内存和时间. 事件最大也就几万个字符, 可以忽略;
 - 脱敏只处理已知的密钥值. 仓库里的其他凭据仍然可能出现在工具的输出中. `runs/` 已经加入 `.gitignore`, 不会被提交;
 - 运行记录不会自动清理, 需要时手工删除.
+
+---
+
+## ADR-014 按层分包, 依赖只能从上往下
+
+**背景**
+V2 和 V3 开始时, 新文件都是临时决定放在哪里的: `trace_view.py`, `task.py`, `workspace.py` 都放在了 `bumpwise/` 的根目录, `__main__.py` 长到了 376 行, 里面混着命令行参数, 终端打印, 运行和 trace 的组装, show 命令. 单看每个决定都说得通, 合在一起, 从目录上已经看不出哪些文件属于同一层, 谁依赖谁. 后面还有准备流水线 (V3), grader (V4), 批量评测 (V6).
+
+**决定**
+
+```
+bumpwise/
+├── config.py        配置
+├── llm/             模型接入
+├── env/             执行平面: Environment 接口和实现
+├── tools/           agent 的工具 (通过 env 操作)
+├── harness/         agent 运行时: loop, policy, prompts, trace
+├── task/            题目, 工作区, 准备流水线 (V3)
+├── cli/             命令行: 每个子命令一个模块 (run.py, show.py), 加上终端打印 (progress.py)
+└── __main__.py      只有几行, 调用 cli.main
+```
+
+以后的 `grading/` (V4) 和 `evaluation/` (V6) 放在 `task/` 和 `cli/` 之间的那一层.
+
+依赖只能从上往下, 下层不知道上层的存在:
+
+```
+cli  →  task (以后还有 grading, evaluation)  →  harness  →  tools  →  env
+                                                  ↓
+                                                 llm  →  config
+```
+
+- 每个包允许依赖谁, 写在 `tests/test_architecture.py` 的 `ALLOWED` 里. 测试扫描每个文件的 import, 违反依赖方向就失败;
+- 新增一个包时, 不先在 `ALLOWED` 里声明它在哪一层, 测试也会失败;
+- 子命令的模块各自提供 `add_parser` 和 `execute`, `cli/__init__.py` 只负责组合. 新增子命令只需要新增一个模块;
+- 测试文件按层命名: `test_<包>_<模块>.py` (例如 `test_harness_loop.py`, `test_cli_run.py`), 和代码的结构对应;
+- 每次新建文件时, 先想清楚它属于哪一层; 每开始一个新的模块 (或版本), 都回头检查一次目录结构.
+
+**理由**
+
+- **依赖方向决定了能不能复用**: V6 的批量评测要在没有命令行的情况下运行题目, 所以 `task` 不能依赖 `cli`; 换成 Docker 时, 只需要替换 `env` 的实现, 所以 `env` 不能依赖任何上层;
+- **用测试守住规则, 而不是靠记忆**: 规则只写在文档里, 迟早会有人 (包括我们自己) 为了方便, 在下层导入一个上层的东西. 测试会在那一刻失败;
+- **"新包必须先声明"是在逼自己思考结构**: 新建一个包, 必须先回答"它在哪一层, 可以依赖谁", 这正是每到一个新模块时要做的思考.
+
+**代价**
+
+- 移动文件之后, 已有的导入要跟着改. 这次用 `task/__init__.py` 重新导出, 让 `from bumpwise.task import load_task` 的写法不变;
+- 架构测试只检查包和包之间的依赖, 不检查包内部的结构. 包内部的整理, 仍然靠每次新建文件时的思考.
+- 项目根目录下的 `tasks/` (题目文件, 数据) 和 `bumpwise/task/` (代码) 名字相近, 但位置和用途都不同, 可以接受.
 
 ---
 
