@@ -14,15 +14,18 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import subprocess
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
-from .config import Settings
+from .config import PROJECT_ROOT, Settings
 from .env import Environment, LocalEnvironment
-from .harness.loop import AgentLoop, RunResult, Status
+from .harness.loop import AgentLoop, RunResult, Status, best_effort, fan_out
 from .harness.policy import RulePolicy
 from .harness.prompts import build_system_prompt, build_task_message
+from .harness.trace import MESSAGES_FILE, TraceWriter, new_run_id, now_iso
 from .llm import create_llm_client
 from .tools import ToolContext, build_default_registry
 
@@ -37,6 +40,9 @@ DEFAULT_STATE = "目标依赖已经安装为新版本, 源代码还没有针对�
 # 目录里放一个内容为 * 的 .gitignore, 整个目录就会被 git 忽略, 不会出现在 git status 里,
 # 也不需要修改仓库自己的 .gitignore 或 .git/info/exclude (worktree 的 .git 是一个文件, info/exclude 不在工作目录里)
 SCRATCH_DIR = ".bumpwise"
+
+# core.quotePath=false: 文件名里有中文时原样显示, 而不是转义成 "\346\226\260..." 这样的八进制
+GIT_STATUS = "-c core.quotePath=false status --short"
 
 # 退出码: 让脚本和流水线 (V3) 不用解析输出, 就能知道这次运行是怎么结束的.
 # 1 留给程序崩溃 (Python 未捕获异常的默认退出码), 2 留给参数错误 (argparse 的默认退出码),
@@ -141,13 +147,111 @@ def _print_summary(result: RunResult, env: Environment, start_head: str) -> None
     if head != start_head:
         print(f"警告: HEAD 从 {start_head[:12]} 变成了 {head[:12]}, 运行过程中产生了提交, 请检查")
 
-    changes = _git(env, "status --short")
+    changes = _git(env, GIT_STATUS)
     print("\n工作区的改动 (请用 git diff 检查):")
     print(changes or "(没有改动)")
 
     if result.final_text.strip():
         print("\n最终回复:")
         print(result.final_text.strip())
+
+
+# ============================================================================ 运行记录
+
+def _harness_version() -> dict[str, Any]:
+    """Bumpwise 自己的代码版本. 同样的题目, 结果变了, 要能分清是 harness 改了, 还是模型或 prompt 改了"""
+    def git(*args: str) -> str:
+        try:
+            out = subprocess.run(["git", "-C", str(PROJECT_ROOT), *args], capture_output=True, text=True, timeout=30)
+            return out.stdout.strip() if out.returncode == 0 else ""
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    # dirty: 有未提交的改动时, commit 不能完全代表这次运行用的代码
+    return {"commit": git("rev-parse", "HEAD") or "unknown", "dirty": bool(git("status", "--porcelain"))}
+
+
+def _initial_meta(run_id, args, settings, env, env_info, start_head, system, task, policy) -> dict[str, Any]:
+    """运行开始时的元数据. 复现一次运行需要的信息都在这里, 密钥除外"""
+    return {
+        "run_id": run_id,
+        "status": "running",
+        "started_at": now_iso(),
+        "harness": _harness_version(),
+        "task": {
+            "repo": env.workdir,
+            "package": args.package,
+            "target": args.target,
+            "test_command": args.test_command,
+            "state": args.state,
+            "notes": args.notes,
+        },
+        # 只记录不敏感的配置, 而且逐个列出 (白名单): 以后 Settings 新增的敏感字段, 不会自动进入 trace.
+        # api_key 不写进来; base_url 不是秘密, 但要记下, 不同的地址可能是不同的模型
+        "settings": {
+            "provider": settings.provider,
+            "api_format": settings.api_format,
+            "base_url": settings.base_url,
+            "model": settings.model,
+            "max_tokens": settings.max_tokens,
+            "max_turns": settings.max_turns,
+            "command_timeout": settings.command_timeout,
+            "max_output_chars": settings.max_output_chars,
+            "llm_max_retries": settings.llm_max_retries,
+            "llm_timeout": settings.llm_timeout,
+        },
+        "environment": {
+            "type": type(env).__name__,
+            "os_name": env_info.os_name,
+            "shell": env_info.shell,
+            "python": str(args.python) if args.python else None,
+            "scratch_dir": SCRATCH_DIR,
+        },
+        "repo": {"head_start": start_head},
+        "prompts": {
+            "system": {"name": system.name, "template_sha256": system.template_sha256, "sha256": system.sha256},
+            "task": {"name": task.name, "template_sha256": task.template_sha256, "sha256": task.sha256},
+        },
+        "policy": policy.describe(),
+    }
+
+
+def _workspace_diff(env: Environment, start_head: str) -> str:
+    """从开始时的 HEAD 到现在的全部改动, 包括 agent 新建的文件 (git diff 默认不包含未跟踪的文件)"""
+    # 和 start_head 比较, 而不是和当前的 HEAD 比较: 即使运行过程中产生了提交, 改动也不会漏掉
+    # 三条命令都要加 core.quotePath=false: status, ls-files, diff 都会把中文文件名转义成八进制
+    parts = [_git(env, f"-c core.quotePath=false diff {start_head}")]
+    untracked = _git(env, "-c core.quotePath=false ls-files --others --exclude-standard")
+    for name in filter(None, untracked.splitlines()):
+        # --no-index 比较两个文件, 有差异时退出码是 1, 所以这里不用 _git (它把非 0 当成失败)
+        result = env.exec(f'git -c core.quotePath=false diff --no-index -- /dev/null "{name}"', timeout=30)
+        parts.append(result.output.rstrip())
+    return "\n".join(p for p in parts if p) + "\n"
+
+
+def _finish_trace(trace: TraceWriter, meta: dict[str, Any], result: RunResult, env: Environment, start_head: str) -> None:
+    # 先写数据, 最后才更新 meta 的状态: 状态是"这份记录是否完整"的标志, 必须最后写
+    trace.write_json(MESSAGES_FILE, result.messages)
+    trace.write_text("diff.patch", _workspace_diff(env, start_head))
+    meta.update(
+        status=result.status.value,
+        finished_at=now_iso(),
+        result={
+            "status": result.status.value,
+            "error": result.error,
+            "exit_code": EXIT_CODES[result.status],
+            "turns": result.turns,
+            "tool_calls": result.tool_calls,
+            "denied_calls": result.denied_calls,
+            "input_tokens": result.input_tokens,
+            "cache_read_tokens": result.cache_read_tokens,
+            "cache_write_tokens": result.cache_write_tokens,
+            "output_tokens": result.output_tokens,
+            "final_text": result.final_text,
+        },
+    )
+    meta["repo"].update(head_end=_git(env, "rev-parse HEAD"), changes=_git(env, GIT_STATUS))
+    trace.write_meta(meta)
 
 
 # ============================================================================ 入口
@@ -171,30 +275,50 @@ def run(args: argparse.Namespace) -> int:
     try:
         # 记下开始时的 HEAD, 结束时用来检查有没有产生提交. 不是 git 仓库时, 这一步就会失败
         start_head = _git(env, "rev-parse HEAD")
-        if _git(env, "status --short"):
+        if _git(env, GIT_STATUS):
             print("警告: 工作区里已经有未提交的改动, 结束时显示的改动会包含它们.")
 
         _prepare_scratch_dir(env)
         policy = RulePolicy(protected_packages=[args.package])
-        system = build_system_prompt(env.describe(), policy.describe(), SCRATCH_DIR)
+        env_info = env.describe()
+        system = build_system_prompt(env_info, policy.describe(), SCRATCH_DIR)
         task = build_task_message(args.package, args.target, args.state, args.test_command, args.notes)
+
+        # 密钥交给 trace 用于脱敏: 写进磁盘的任何内容里, 出现密钥的值都会被替换成 ***
+        trace = TraceWriter(settings.runs_dir, new_run_id(Path(env.workdir).name), secrets=[settings.api_key])
+        meta = _initial_meta(trace.run_id, args, settings, env, env_info, start_head, system, task, policy)
+        trace.write_text("prompts/system.md", system.text)
+        trace.write_text("prompts/task.md", task.text)
+        trace.write_meta(meta)
 
         print(LOCAL_ENV_WARNING)
         print(f"\n仓库: {env.workdir} (HEAD {start_head[:12]})")
         print(f"模型: {settings.provider} / {settings.model}, 最多调用 {settings.max_turns} 次")
         print(f"prompt: {system.name} {system.sha256[:12]}, {task.name} {task.sha256[:12]}")
+        print(f"运行记录: {trace.dir}")
 
-        loop = AgentLoop(
-            llm=create_llm_client(settings),
-            registry=build_default_registry(),
-            policy=policy,
-            ctx=ToolContext(env=env, command_timeout=settings.command_timeout, max_output_chars=settings.max_output_chars),
-            max_turns=settings.max_turns,
-            on_event=ProgressPrinter(),
-        )
-        result = loop.run(system.text, task.text)
-        _print_summary(result, env, start_head)
-        return EXIT_CODES[result.status]
+        try:
+            loop = AgentLoop(
+                llm=create_llm_client(settings),
+                registry=build_default_registry(),
+                policy=policy,
+                ctx=ToolContext(env=env, command_timeout=settings.command_timeout, max_output_chars=settings.max_output_chars),
+                max_turns=settings.max_turns,
+                # trace 是关键的订阅者, 放在前面, 出错会让运行停下; 终端打印只是尽力而为, 出错不影响运行
+                on_event=fan_out(trace, best_effort(ProgressPrinter())),
+            )
+            result = loop.run(system.text, task.text)
+            _finish_trace(trace, meta, result, env, start_head)
+            _print_summary(result, env, start_head)
+            print(f"\n运行记录: {trace.dir}\n查看: python -m bumpwise show {trace.dir}")
+            return EXIT_CODES[result.status]
+        except BaseException:
+            # 程序本身出错了 (不是 agent 没完成任务). 也要把错误记进 meta.json, 否则这次运行会一直显示为 running
+            meta.update(status="crashed", finished_at=now_iso(), error=traceback.format_exc())
+            trace.write_meta(meta)
+            raise
+        finally:
+            trace.close()
     finally:
         env.close()
 
