@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -30,6 +31,9 @@ def edit(path: str, old: str, new: str) -> LLMResponse:
     return LLMResponse(content=[call], stop_reason="tool_use")
 
 
+FAKE_KEY = "sk-fake-key-for-tests-0123456789"
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """一个有一次提交的 git 仓库. 用 -c 临时指定提交者, 不修改全局的 git 配置"""
@@ -46,9 +50,10 @@ def repo(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def fake_llm(monkeypatch):
-    """替换掉读取配置和创建模型客户端这两步: 测试不读取 .env, 不联网"""
-    settings = Settings(provider="fake", api_format="anthropic", api_key="x", base_url=None, model="fake-model")
+def fake_llm(monkeypatch, tmp_path):
+    """替换掉读取配置和创建模型客户端这两步: 测试不读取 .env, 不联网. 运行记录写到临时目录, 不写进真实的 runs/"""
+    settings = Settings(provider="fake", api_format="anthropic", api_key=FAKE_KEY, base_url=None,
+                        model="fake-model", runs_dir=tmp_path / "runs")
     monkeypatch.setattr(cli.Settings, "from_env", lambda: settings)
     holder: dict[str, FakeLLM] = {}
 
@@ -141,3 +146,96 @@ def test_missing_required_args():
 
 def test_every_status_has_exit_code():
     assert set(cli.EXIT_CODES) == set(cli.Status)
+
+
+# ---------------------------------------------------------------- 运行记录 (V2)
+
+def only_run_dir(tmp_path: Path) -> Path:
+    runs = list((tmp_path / "runs").iterdir())
+    assert len(runs) == 1
+    return runs[0]
+
+
+def write(path: str, content: str) -> LLMResponse:
+    call = {"type": "tool_use", "id": "w1", "name": "write_file", "input": {"path": path, "content": content}}
+    return LLMResponse(content=[call], stop_reason="tool_use")
+
+
+def test_run_writes_trace(repo, fake_llm, tmp_path):
+    thinking = {"type": "thinking", "thinking": "先改 app.py", "signature": "sig"}
+    first = edit("app.py", "x = 1", "x = 2")
+    first.content.insert(0, thinking)
+    fake_llm(first, write("新文件.py", "y = 1"), reply("结论: 已完成"))
+    assert cli.main(run_args(repo)) == 0
+
+    run_dir = only_run_dir(tmp_path)
+    meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "finished"
+    assert meta["result"]["turns"] == 3 and meta["result"]["exit_code"] == 0
+    assert meta["prompts"]["system"]["name"] == "system_v2"
+    assert meta["repo"]["head_start"] == meta["repo"]["head_end"]
+    assert meta["task"]["package"] == "pydantic"
+    assert meta["harness"]["commit"]
+    assert "api_key" not in meta["settings"]
+
+    events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
+    assert events[0]["event"] == "llm_response"
+    assert events[0]["data"]["content"][0] == thinking  # thinking 块完整地记录下来了
+    assert events[-1]["event"] == "stop"
+
+    # 任务消息 + 3 轮 (每轮一条 assistant 消息, 前两轮各有一条工具结果) = 6 条
+    messages = json.loads((run_dir / "messages.json").read_text(encoding="utf-8"))
+    assert messages[0]["role"] == "user" and len(messages) == 6
+    assert (run_dir / "prompts" / "system.md").read_text(encoding="utf-8").startswith("你是一名")
+    assert (run_dir / "prompts" / "task.md").read_text(encoding="utf-8").startswith("请把")
+
+
+def test_diff_includes_new_files_with_readable_names(repo, fake_llm, tmp_path):
+    fake_llm(edit("app.py", "x = 1", "x = 2"), write("新文件.py", "y = 1"), reply("完成"))
+    cli.main(run_args(repo))
+    run_dir = only_run_dir(tmp_path)
+    diff = (run_dir / "diff.patch").read_text(encoding="utf-8")
+    assert "+x = 2" in diff
+    assert "新文件.py" in diff and "+y = 1" in diff  # 新建的 (未跟踪的) 文件也在 diff 里
+    assert ".bumpwise" not in diff                    # 临时目录被忽略了
+    changes = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))["repo"]["changes"]
+    assert "?? 新文件.py" in changes                  # 中文文件名没有被转义成八进制
+
+
+def test_secrets_are_redacted_in_trace(repo, fake_llm, tmp_path):
+    # 模拟最坏的情况: 模型的回复里出现了密钥 (比如它用 run_command 读到了仓库外面的 .env)
+    fake_llm(reply(f"结论: 已完成, 顺便看到了 {FAKE_KEY}"))
+    cli.main(run_args(repo))
+    run_dir = only_run_dir(tmp_path)
+    for path in run_dir.rglob("*"):
+        if path.is_file():
+            assert FAKE_KEY not in path.read_text(encoding="utf-8"), path.name
+    assert "***" in (run_dir / "events.jsonl").read_text(encoding="utf-8")
+
+
+def test_crash_is_recorded(repo, fake_llm, tmp_path, monkeypatch):
+    # harness 自己出错 (这里模拟写 diff 时出错), meta.json 不能一直停留在 running
+    def broken(*args):
+        raise RuntimeError("写 diff 失败")
+
+    monkeypatch.setattr(cli, "_workspace_diff", broken)
+    fake_llm(reply("完成"))
+    with pytest.raises(RuntimeError):
+        cli.main(run_args(repo))
+    meta = json.loads((only_run_dir(tmp_path) / "meta.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "crashed"
+    assert "写 diff 失败" in meta["error"]
+
+
+def test_broken_printer_does_not_stop_the_run(repo, fake_llm, tmp_path, monkeypatch, capsys):
+    # 终端打印只是尽力而为: 它坏了, 运行照常完成, trace 照常写
+    class BrokenPrinter:
+        def __call__(self, event, data):
+            raise RuntimeError("打印失败")
+
+    monkeypatch.setattr(cli, "ProgressPrinter", BrokenPrinter)
+    fake_llm(reply("完成"))
+    assert cli.main(run_args(repo)) == 0
+    assert "BrokenPrinter" in capsys.readouterr().err
+    assert json.loads((only_run_dir(tmp_path) / "meta.json").read_text(encoding="utf-8"))["status"] == "finished"
