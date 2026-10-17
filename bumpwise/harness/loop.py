@@ -15,6 +15,9 @@
 """
 from __future__ import annotations
 
+import copy
+import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -69,6 +72,52 @@ class RunResult:
 # 事件回调: 循环在关键的时间点调用它,参数是事件名和事件内容
 # __main__用它在终端上打印进度,V2 用它写 trace, 循环本身不打印, 也不写文件
 EventHandler = Callable[[str, dict[str, Any]], None]
+
+
+def fan_out(*handlers: EventHandler) -> EventHandler:
+    """把一个事件交给多个处理函数 (比如写 trace 和终端打印), 效果上就是广播. 各个处理函数之间互相隔离:
+
+    - 数据隔离: 每个处理函数拿到自己的一份深拷贝. 事件里的 content 和对话历史是同一个对象,
+      处理函数改了它, 下一次请求就会带着被改过的 thinking 块发出去;
+    - 执行隔离: 一个处理函数出错, 其他的照样执行, 全部执行完之后, 再把第一个错误抛出去.
+
+    出错之后要不要让运行停下, 由处理函数自己决定: 关键的 (trace) 直接传进来, 出错会让运行停下;
+    尽力而为的 (终端打印) 先用 best_effort 包一层, 出错只提示, 不影响运行.
+    """
+
+    def handle(event: str, data: dict[str, Any]) -> None:
+        first_error: Exception | None = None
+        for handler in handlers:
+            try:
+                handler(event, copy.deepcopy(data))
+            except Exception as e:
+                # 先记下来, 不马上抛出: 排在后面的处理函数 (比如 trace) 也要收到这个事件
+                if first_error is None:
+                    first_error = e
+        if first_error is not None:
+            raise first_error
+
+    return handle
+
+
+def best_effort(handler: EventHandler, name: str = "") -> EventHandler:
+    """把一个处理函数包装成'尽力而为'的: 出错时只在第一次提示, 之后忽略, 不影响其他处理函数, 也不影响运行
+
+    用于终端打印这类不重要的订阅者,trace 不能用它包装: 没有记录的运行没有意义, 写 trace 出错必须让人看到
+    """
+    label = name or type(handler).__name__
+    failed = False
+
+    def handle(event: str, data: dict[str, Any]) -> None:
+        nonlocal failed
+        try:
+            handler(event, data)
+        except Exception as e:
+            if not failed:
+                # 只提示一次: 一个坏掉的处理函数每个事件都会出错,每次都提示的话,终端会被刷屏
+                print(f"警告: {label} 处理事件时出错,之后的错误不再提示: {type(e).__name__}: {e}", file=sys.stderr)
+                failed = True
+    return handle
 
 
 @dataclass
@@ -138,6 +187,7 @@ class AgentLoop:
 
         while run.turns < self._max_turns:
             run.turns += 1
+            started = time.monotonic()
             try:
                 response = self._llm.create(system, tools, run.messages)
             except Exception as e:
@@ -158,6 +208,9 @@ class AgentLoop:
                 "output_tokens": response.output_tokens,
                 "cache_read_tokens": response.cache_read_tokens,
                 "cache_write_tokens": response.cache_write_tokens,
+                "duration_s": round(time.monotonic() - started, 3),
+                # 完整的回复内容 (包括 thinking 块): 终端只显示预览, trace 靠它回答'模型为什么这么做'
+                "content": response.content,
             })
 
             # 回复被截断: 里面的工具调用可能只写了一半 (参数不完整), 一律不执行
@@ -207,6 +260,7 @@ class AgentLoop:
             "rule": decision.rule
         })
 
+        started = time.monotonic()
         if decision.allowed:
             result = self._registry.execute(name, args, self._ctx)
         else:
@@ -218,6 +272,7 @@ class AgentLoop:
             "id": call.get("id"),
             "name": name,
             "is_error": result.is_error,
+            "duration_s": round(time.monotonic() - started, 3),
             "content": result.content,
         })
         return {
