@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from bumpwise.env import LocalEnvironment
-from bumpwise.harness.loop import MAX_CONSECUTIVE_TRUNCATIONS, AgentLoop, Status
+from bumpwise.harness.loop import MAX_CONSECUTIVE_TRUNCATIONS, AgentLoop, Status, best_effort, fan_out
 from bumpwise.harness.policy import Action, Decision, RulePolicy
 from bumpwise.llm import LLMResponse
 from bumpwise.tools import ToolContext, build_default_registry
@@ -245,3 +245,79 @@ def test_events_in_order(make_loop):
     assert [name for name, _ in events] == ["llm_response", "tool_call", "tool_result", "llm_response", "stop"]
     assert events[1][1]["decision"] == "allow"
     assert events[-1][1]["status"] == "finished"
+
+
+def test_events_carry_full_content_and_durations(make_loop):
+    # V2 的 trace 靠这些字段回答"模型为什么这样做"和"时间花在哪里"
+    events: list = []
+    llm = FakeLLM(tool_call(("read_file", {"path": "x"})), text("完成"))
+    make_loop(llm, events=events).run("system", "任务")
+    first = events[0][1]
+    assert first["content"][0] == {"type": "thinking", "thinking": "想一想", "signature": "sig-1"}
+    assert first["duration_s"] >= 0
+    assert events[2][0] == "tool_result" and events[2][1]["duration_s"] >= 0
+
+
+# ---------------------------------------------------------------- fan_out 和 best_effort
+
+def test_fan_out_calls_every_handler_in_order():
+    calls = []
+    handler = fan_out(lambda e, d: calls.append(("a", e)), lambda e, d: calls.append(("b", e)))
+    handler("stop", {})
+    assert calls == [("a", "stop"), ("b", "stop")]
+
+
+def test_handler_cannot_change_other_handlers_or_history(make_loop):
+    # 数据隔离: 事件里的 content 和对话历史是同一个对象. 一个处理函数改了它,
+    # 不能影响其他处理函数, 更不能影响下一次发给模型的历史 (thinking 块被改了, 接口会拒绝)
+    def vandal(event, data):
+        if event == "llm_response":
+            data["content"][0]["thinking"] = "被改了"
+
+    seen: list = []
+    llm = FakeLLM(tool_call(("read_file", {"path": "x"})), text("完成"))
+    loop = make_loop(llm)
+    loop._on_event = fan_out(vandal, lambda e, d: seen.append((e, d)))
+    loop.run("system", "任务")
+
+    assert seen[0][1]["content"][0]["thinking"] == "想一想"
+    assert llm.calls[1][1]["content"][0]["thinking"] == "想一想"
+
+
+def test_one_handler_failing_does_not_stop_the_others():
+    # 执行隔离: 前面的处理函数出错, 后面的 (比如 trace) 照样收到事件, 全部执行完之后再抛出错误
+    received = []
+
+    def broken(event, data):
+        raise RuntimeError("打印失败")
+
+    handler = fan_out(broken, lambda e, d: received.append(e))
+    with pytest.raises(RuntimeError, match="打印失败"):
+        handler("tool_result", {})
+    assert received == ["tool_result"]
+
+
+def test_ctrl_c_is_not_delayed_by_fan_out():
+    # KeyboardInterrupt 不属于 Exception, 要立刻生效, 不等后面的处理函数执行
+    received = []
+
+    def interrupted(event, data):
+        raise KeyboardInterrupt
+
+    handler = fan_out(interrupted, lambda e, d: received.append(e))
+    with pytest.raises(KeyboardInterrupt):
+        handler("stop", {})
+    assert received == []
+
+
+def test_best_effort_warns_once_and_never_raises(capsys):
+    class Printer:
+        def __call__(self, event, data):
+            raise UnicodeEncodeError("gbk", "✓", 0, 1, "illegal multibyte sequence")
+
+    handler = best_effort(Printer())
+    for _ in range(3):
+        handler("tool_result", {})
+    err = capsys.readouterr().err
+    assert err.count("警告") == 1
+    assert "Printer" in err and "UnicodeEncodeError" in err
