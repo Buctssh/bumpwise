@@ -1,7 +1,7 @@
 # 运行 001: cortex-xdr-client, 第一次端到端运行
 
 > V1 的第一次真实运行. 目的不是完成任务, 而是确认整条链路 (模型 → 工具 → 权限策略 → 环境) 是通的, 并找出 prompt 和 harness 的问题.
-> 原始输出见 [001-cortex.log](001-cortex.log). V2 有 trace 之前, 终端输出是唯一的记录.
+> 原始输出见 [001-cortex-output.txt](001-cortex-output.txt). V2 有 trace 之前, 终端输出是唯一的记录.
 
 ## 结论速览
 
