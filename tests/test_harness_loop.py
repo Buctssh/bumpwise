@@ -321,3 +321,12 @@ def test_best_effort_warns_once_and_never_raises(capsys):
     err = capsys.readouterr().err
     assert err.count("警告") == 1
     assert "Printer" in err and "UnicodeEncodeError" in err
+
+
+def test_truncation_count_resets_after_a_normal_reply(make_loop):
+    # "连续"截断才停止: 中间有一次正常的回复, 计数就清零. 截断 2 次 + 正常 + 截断 2 次, 一共 4 次截断, 但不应该停止
+    cut = lambda: text("写了一半", stop_reason="max_tokens")
+    llm = FakeLLM(cut(), cut(), tool_call(("read_file", {"path": "x"})), cut(), cut(), text("完成"))
+    result = make_loop(llm).run("system", "任务")
+    assert result.status is Status.FINISHED
+    assert len(llm.calls) == 6
