@@ -19,7 +19,7 @@ import copy
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -132,7 +132,8 @@ class _Run:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     final_text: str = ""
-    errors: list[str] = field(default_factory=list)
+    # 连续被截断的次数, 回复正常时清零. 它也是状态: 以后从检查点恢复运行时, 要接着这个计数继续
+    truncations: int = 0
 
 
 class AgentLoop:
@@ -183,7 +184,6 @@ class AgentLoop:
 
     def _loop(self, system: str, run: _Run) -> tuple[Status, str]:
         tools = self._registry.schemas()
-        truncations = 0
 
         while run.turns < self._max_turns:
             run.turns += 1
@@ -215,13 +215,13 @@ class AgentLoop:
 
             # 回复被截断: 里面的工具调用可能只写了一半 (参数不完整), 一律不执行
             if response.stop_reason == "max_tokens":
-                truncations += 1
+                run.truncations += 1
                 run.messages.append({"role": "assistant", "content": _truncated_content(response)})
-                if truncations >= MAX_CONSECUTIVE_TRUNCATIONS:
-                    return Status.MAX_TOKENS, f"连续 {truncations} 次回复超出长度上限"
+                if run.truncations >= MAX_CONSECUTIVE_TRUNCATIONS:
+                    return Status.MAX_TOKENS, f"连续 {run.truncations} 次回复超出长度上限"
                 run.messages.append({"role": "user", "content": TRUNCATED_NOTICE})
                 continue
-            truncations = 0
+            run.truncations = 0
 
             # 原样追加,不做任何修改: thinking 块带有签名,后面的请求必须原样带上,改动或删除都会被接口拒绝
             run.messages.append({"role": "assistant", "content": response.content})
