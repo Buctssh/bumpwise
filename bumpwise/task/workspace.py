@@ -7,7 +7,8 @@
 
 本地实现的目录结构:
     <root>/_mirrors/<名字>.git      远程仓库的本地镜像. 第一次使用时克隆, 之后所有运行共用, 只需要 fetch 缺少的提交
-    <root>/runs/<运行编号>/repo      每次运行从镜像克隆一份全新的仓库, 互不影响, 运行结束后保留, 方便事后检查
+    <root>/runs/<运行编号>/repo      每次运行一份全新的仓库, 互不影响, 运行结束后保留, 方便事后检查.
+                                     只包含起点提交和它之前的历史: 起点之后的提交 (包括参考答案) 不能出现在工作区里
 """
 from __future__ import annotations
 
@@ -77,12 +78,16 @@ class LocalWorkspaceProvider:
         repo = self._runs / run_id / "repo"
         if repo.exists():
             raise WorkspaceError(f"工作区已经存在: {repo}")     # 绝不复用旧的工作区
-        repo.parent.mkdir(parents=True, exist_ok=True)
+        repo.mkdir(parents=True)
 
-        # 从本地镜像克隆, 不需要联网; git 会用硬链接共享对象文件, 很快, 也几乎不占额外的空间
-        _git("clone", "--quiet", "--no-checkout", str(mirror), str(repo))
+        # 只取起点提交和它之前的历史, 不克隆整个镜像: 镜像里有起点之后的提交 (比如已经合并进 master 的迁移,
+        # 题目的参考答案), agent 用 git log 或 git diff master 就能看到答案. 所以新建一个空仓库, 只 fetch 起点提交,
+        # 也不添加 origin (否则 agent 执行一次 git fetch origin, 未来的提交就又全回来了).
+        # 工作区里没有任何指向未来提交的引用, 也没有那些提交的对象
+        _git("init", "--quiet", str(repo))
+        _git("fetch", "--quiet", "--no-tags", str(mirror), task.repo.base_commit, cwd=repo)
         # 检出起点提交, 并创建一个分支: harness 修改依赖声明的提交, 以及之后的改动, 都在这个分支上
-        _git("checkout", "--quiet", "-b", f"bumpwise/{run_id}", task.repo.base_commit, cwd=repo)
+        _git("checkout", "--quiet", "-b", f"bumpwise/{run_id}", "FETCH_HEAD", cwd=repo)
         head = _git("rev-parse", "HEAD", cwd=repo)
         if head != task.repo.base_commit:
             raise WorkspaceError(f"检出的提交是 {head}, 不是题目要求的 {task.repo.base_commit}")
@@ -107,6 +112,12 @@ class LocalWorkspaceProvider:
                 raise WorkspaceError(f"仓库 {url} 中找不到提交 {commit}, 请检查题目的 base_commit.\n{e}") from None
             if not _has_commit(mirror, commit):
                 raise WorkspaceError(f"仓库 {url} 中找不到提交 {commit}, 请检查题目的 base_commit")
+        # 允许别的仓库按提交从镜像 fetch (默认只允许 fetch 分支和标签). 只放宽到"能从某个引用追溯到"的提交.
+        # 这个设置写在镜像自己的配置里: 镜像是 Bumpwise 的缓存, 不是用户的仓库, 也不是全局配置
+        _git("config", "uploadpack.allowReachableSHA1InWant", "true", cwd=mirror)
+        # 给起点提交建一个引用, 把它"钉"在镜像里: 单独 fetch 来的提交不在任何分支上, 没有引用的话,
+        # 不能按提交 fetch, 而且以后 git gc 可能会把它清理掉. 两条命令都是幂等的, 每次都执行
+        _git("update-ref", f"refs/bumpwise/pins/{commit}", commit, cwd=mirror)
         return mirror
 
     def _clone_mirror(self, url: str, mirror: Path) -> None:
