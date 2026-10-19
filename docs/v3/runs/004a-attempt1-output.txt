@@ -1,0 +1,13 @@
+注意: 当前使用本地环境, agent 执行的命令拥有你的全部权限, 并且不受路径限制.
+只在可信的仓库上运行, 运行时请在旁边观察, 发现不对随时按 Ctrl+C 停止.
+
+运行记录: D:\work\Bumpwise\runs\20261019-154122-cortex-xdr-client-pydantic2-e9a7
+
+============================================================
+结束: prepare_failed
+git clone --quiet --mirror https://github.com/ebarti/cortex-xdr-client.git D:\work\Bumpwise\workspace\_mirrors\ebarti-cortex-xdr-client-be17c8d2.git.tmp-504e4eb9 失败:
+fatal: unable to access 'https://github.com/ebarti/cortex-xdr-client.git/': Failed to connect to github.com port 443 via 127.0.0.1 after 2085 ms: Could not connect to server
+
+运行记录: D:\work\Bumpwise\runs\20261019-154122-cortex-xdr-client-pydantic2-e9a7
+查看: python -m bumpwise show D:\work\Bumpwise\runs\20261019-154122-cortex-xdr-client-pydantic2-e9a7
+exit=20

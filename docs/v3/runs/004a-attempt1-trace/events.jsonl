@@ -1,0 +1,1 @@
+{"seq": 1, "time": "2026-10-19T15:41:22+08:00", "elapsed_s": 0.156, "event": "run_start", "data": {"run_id": "20261019-154122-cortex-xdr-client-pydantic2-e9a7", "trace_dir": "D:\\work\\Bumpwise\\runs\\20261019-154122-cortex-xdr-client-pydantic2-e9a7", "task_id": "cortex-xdr-client-pydantic2"}}

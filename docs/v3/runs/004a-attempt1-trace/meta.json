@@ -1,0 +1,54 @@
+{
+  "run_id": "20261019-154122-cortex-xdr-client-pydantic2-e9a7",
+  "status": "prepare_failed",
+  "started_at": "2026-10-19T15:41:22+08:00",
+  "harness": {
+    "commit": "67c94be14f3f46bf81623996e5c72b5b7bfdcf1c",
+    "dirty": true
+  },
+  "mode": "task",
+  "task": {
+    "id": "cortex-xdr-client-pydantic2",
+    "description": "Cortex XDR 的 API 客户端, 从 pydantic 1 迁移到 2",
+    "repo": {
+      "url": "https://github.com/ebarti/cortex-xdr-client.git",
+      "base_commit": "3db15077facd9fae0efc586b5e7cdfb8b14e985c"
+    },
+    "environment": {
+      "python": "3.12",
+      "install": [
+        "python -m pip install -e . \"pytest>=7.2,<8\" \"requests-mock>=1.9,<2\" \"pytest-mock>=3.10,<4\""
+      ]
+    },
+    "migration": {
+      "package": "pydantic",
+      "from_version": "1.10.26",
+      "to_version": "2.14.1",
+      "target": ">=2,<3",
+      "test_command": "python -m pytest -q",
+      "notes": "",
+      "edits": [
+        {
+          "file": "pyproject.toml",
+          "old": "pydantic = \"^1.8.2\"",
+          "new": "pydantic = \">=2,<3\""
+        }
+      ]
+    }
+  },
+  "settings": {
+    "provider": "deepseek-anthropic",
+    "api_format": "anthropic",
+    "base_url": "https://api.deepseek.com/anthropic",
+    "model": "deepseek-flash",
+    "max_tokens": 8192,
+    "max_turns": 1,
+    "command_timeout": 60,
+    "max_output_chars": 20000,
+    "llm_max_retries": 3,
+    "llm_timeout": 300.0
+  },
+  "finished_at": "2026-10-19T15:41:24+08:00",
+  "error": "git clone --quiet --mirror https://github.com/ebarti/cortex-xdr-client.git D:\\work\\Bumpwise\\workspace\\_mirrors\\ebarti-cortex-xdr-client-be17c8d2.git.tmp-504e4eb9 失败:\nfatal: unable to access 'https://github.com/ebarti/cortex-xdr-client.git/': Failed to connect to github.com port 443 via 127.0.0.1 after 2085 ms: Could not connect to server",
+  "failed_step": "workspace"
+}
