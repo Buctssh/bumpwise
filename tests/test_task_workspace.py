@@ -142,3 +142,36 @@ def test_existing_workspace_is_never_reused(provider, remote):
     provider.create(task, "run-1")
     with pytest.raises(WorkspaceError, match="已经存在"):
         provider.create(task, "run-1")
+
+
+# ---------------------------------------------------------------- 起点之后的提交不能出现在工作区里
+
+def has_object(ws, sha: str) -> bool:
+    # 引号不能省: ^ 是 cmd.exe 的转义字符, 不加引号的话 ^{commit} 会变成 {commit}
+    return ws.env.exec(f'git cat-file -e "{sha}^{{commit}}"', timeout=30).exit_code == 0
+
+
+def test_future_commits_are_not_in_the_workspace(provider, remote):
+    # 起点是 main 的第一个提交; main 的第二个提交 (相当于"已经迁移好的代码") 和 feature 分支都在起点之后
+    ws = provider.create(make_task(remote["path"], remote["first"]), "run-1")
+    assert has_object(ws, remote["first"])
+    assert not has_object(ws, remote["main"])       # 用 git show / git diff 也拿不到未来的代码
+    assert not has_object(ws, remote["feature"])
+    refs = ws.env.exec("git for-each-ref --format=%(refname)", timeout=30).output.split()
+    assert refs == ["refs/heads/bumpwise/run-1"]     # 没有 master, 没有 origin/*, 没有标签
+    assert ws.env.exec("git remote", timeout=30).output.strip() == ""  # 没有 origin: git fetch 也取不回未来的提交
+
+
+def test_history_before_the_base_commit_is_kept(provider, remote):
+    # agent 可能需要看起点之前的历史 (比如 git log 看某个文件是怎么改过来的)
+    ws = provider.create(make_task(remote["path"], remote["main"]), "run-1")
+    assert has_object(ws, remote["first"])
+    assert ws.env.exec("git log --oneline", timeout=30).output.count("\n") == 2
+
+
+def test_base_commits_are_pinned_in_the_mirror(provider, remote, tmp_path):
+    provider.create(make_task(remote["path"], remote["feature"]), "run-1")
+    mirror = next((tmp_path / "workspace" / "_mirrors").iterdir())
+    pinned = subprocess.run(["git", "-C", str(mirror), "for-each-ref", "refs/bumpwise/pins/", "--format=%(objectname)"],
+                            capture_output=True, text=True).stdout.split()
+    assert pinned == [remote["feature"]]
