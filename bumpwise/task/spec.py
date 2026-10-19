@@ -51,12 +51,38 @@ class MigrationSpec(_Spec):
     edits: list[Edit] = Field(default_factory=list)
 
 
+class KnownFailure(_Spec):
+    """隐藏测试中预期会失败的测试, 必须写明原因"""
+
+    test: str = Field(min_length=1,
+                      description="pytest 的测试编号, 例如 tests/test_x.py::test_y, 带参数的测试写到函数名即可, 会匹配它的所有参数")
+    reason: str = Field(min_length=1, description="为什么预期会失败, 以及是怎么核实的")
+
+
+class HiddenTestsSpec(_Spec):
+    """隐藏测试: 从参考答案的提交中取出的测试, agent 看不到它们, 只在评分时运行"""
+
+    commit: str = Field(pattern=r"^[0-9a-f]{40}$", description="参考答案的提交, 例如作者完成迁移的那个提交")
+    paths: list[str] = Field(min_length=1, description="从这个提交中取出的测试文件或目录, 例如 tests")
+    known_failures: list[KnownFailure] = Field(default_factory=list)
+
+
+class EvaluationSpec(_Spec):
+    """评测信息: 只给 grader 用, 流水线和 agent 都看不到它, 业务里的作业也没有这一段"""
+
+    source: list[str] = Field(min_length=1, description="源代码所在的目录, 用来区分警告和改动来自源代码还是测试")
+    packages: list[str] = Field(min_length=1, description="要比较接口表面的包")
+    forbidden: list[str] = Field(default_factory=list, description="迁移完成后, 源代码中不应该再出现的旧写法 (按字符串原样匹配)")
+    hidden_tests: HiddenTestsSpec | None = None
+
+
 class TaskSpec(_Spec):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$", description="题目编号, 也会出现在目录名和运行记录里")
     description: str = ""
     repo: RepoSpec
     environment: EnvironmentSpec
     migration: MigrationSpec
+    evaluation: EvaluationSpec | None = None        # 只有评测题目才有, agent 永远用不到它
 
 
 def load_task(path: Path) -> TaskSpec:

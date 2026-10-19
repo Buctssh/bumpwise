@@ -5,6 +5,12 @@
 """
 from __future__ import annotations
 
-from .spec import Edit, EnvironmentSpec, MigrationSpec, RepoSpec, TaskError, TaskSpec, load_task
+from .spec import (
+    Edit, EnvironmentSpec, EvaluationSpec, HiddenTestsSpec, KnownFailure, MigrationSpec, RepoSpec,
+    TaskError, TaskSpec, load_task,
+)
 
-__all__ = ["Edit", "EnvironmentSpec", "MigrationSpec", "RepoSpec", "TaskError", "TaskSpec", "load_task"]
+__all__ = [
+    "Edit", "EnvironmentSpec", "EvaluationSpec", "HiddenTestsSpec", "KnownFailure", "MigrationSpec", "RepoSpec",
+    "TaskError", "TaskSpec", "load_task",
+]
