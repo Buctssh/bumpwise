@@ -14,9 +14,15 @@ from ..env import Environment
 ASSETS_DIR = Path(__file__).parent / "assets"
 
 
-def stage_asset(env: Environment, name: str) -> str:
-    """把 assets/<name> 写进工作区的一个新目录, 返回这个目录 (相对于仓库根目录)"""
+def new_work_dir(env: Environment) -> str:
+    """在工作区里新建一个名字随机的目录 (自带 .gitignore), 返回它的路径 (相对于仓库根目录)"""
     work = f".bumpwise-grader-{secrets.token_hex(4)}"
     env.write_bytes(f"{work}/.gitignore", b"*\n")
+    return work
+
+
+def stage_asset(env: Environment, name: str) -> str:
+    """把 assets/<name> 写进工作区的一个新目录, 返回这个目录 (相对于仓库根目录)"""
+    work = new_work_dir(env)
     env.write_bytes(f"{work}/{name}", (ASSETS_DIR / name).read_bytes())
     return work
