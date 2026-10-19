@@ -13,11 +13,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import secrets
 import shutil
 import subprocess
 import sys
+import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -48,6 +50,11 @@ class WorkspaceProvider(Protocol):
     """为一次运行提供一个全新的工作区, 本地实现为 LocalWorkspaceProvider"""
 
     def create(self, task: TaskSpec, run_id: str) -> Workspace:
+        ...
+
+    def files_at(self, task: TaskSpec, commit: str, paths: list[str]) -> dict[str, bytes]:
+        """读出仓库在某个提交时的一些文件 (目录会展开成其中的所有文件). 发生在控制平面, 不经过工作区:
+        grader 用它取出参考答案里的隐藏测试, 而工作区里没有参考答案的提交"""
         ...
 
 
@@ -95,6 +102,15 @@ class LocalWorkspaceProvider:
         env = LocalEnvironment(repo, python=repo / VENV_PYTHON)
         return Workspace(env=env, path=repo, base_commit=head)
 
+    def files_at(self, task: TaskSpec, commit: str, paths: list[str]) -> dict[str, bytes]:
+        mirror = self._ensure_mirror(task.repo.url, commit)
+        # git archive 把这个提交里的文件打包成 tar, 在内存里解开. 不需要检出, 也不会碰任何工作区.
+        # core.autocrlf=false: 取仓库里原样存储的内容. 不加的话, 会按本机的设置转换换行符 (Windows 上常见 LF 变成 CRLF),
+        # 同一个提交在不同的机器上读出来的内容就不一样了
+        data = _git_bytes("-c", "core.autocrlf=false", "archive", "--format=tar", commit, "--", *paths, cwd=mirror)
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
+            return {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+
     # ------------------------------------------------------------------ 镜像
     
     def _ensure_mirror(self, url: str, commit: str) -> Path:
@@ -141,6 +157,18 @@ def _mirror_name(url: str) -> str:
     readable = "-".join(parts[-2:]) or "repo"
     safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in readable)[:60]
     return f"{safe}-{hashlib.sha256(url.encode('utf-8')).hexdigest()[:8]}"
+
+
+def _git_bytes(*args: str, cwd: Path) -> bytes:
+    """和 _git 一样, 但返回原始的字节: git archive 的输出是二进制的 tar, 不能按文字解码"""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    try:
+        result = subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, timeout=_GIT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise WorkspaceError(f"git {' '.join(args)} 超过 {_GIT_TIMEOUT} 秒没有完成") from None
+    if result.returncode != 0:
+        raise WorkspaceError(f"git {' '.join(args)} 失败:\n{result.stderr.decode('utf-8', errors='replace').strip()}")
+    return result.stdout
 
 
 def _has_commit(repo: Path, commit: str) -> bool:
