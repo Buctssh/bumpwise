@@ -123,3 +123,58 @@ def test_invalid_toml_mentions_the_path(tmp_path):
     with pytest.raises(TaskError, match="不是合法的 TOML") as e:
         load_task(path)
     assert str(path) in str(e.value)  # V6 一次加载很多题, 要能看出是哪一个文件
+
+
+# ---------------------------------------------------------------- 评测信息 (V4)
+
+EVALUATION = """
+[evaluation]
+source = ["demo"]
+packages = ["demo"]
+forbidden = ["parse_obj("]
+
+[evaluation.hidden_tests]
+commit = "51106bd0fc5cd88c97e91ea6a03ed2728a4a03fa"
+paths = ["tests"]
+
+[[evaluation.hidden_tests.known_failures]]
+test = "tests/test_x.py::test_new_feature"
+reason = "参考答案新增的功能"
+"""
+
+
+def test_cortex_task_has_evaluation():
+    evaluation = load_task(TASKS_DIR / "cortex-xdr-client-pydantic2.toml").evaluation
+    assert evaluation.hidden_tests.commit.startswith("51106bd")
+    assert len(evaluation.hidden_tests.known_failures) == 2
+    assert all(k.reason for k in evaluation.hidden_tests.known_failures)
+    # 真正的行为变化不能被标成"已知的失败", 否则 grader 就发现不了它
+    assert not any("dotted_aliases" in k.test for k in evaluation.hidden_tests.known_failures)
+    assert ".json(" not in evaluation.forbidden  # 会匹配到 requests 的 response.json(), 全是误报
+
+
+def test_task_without_evaluation_still_loads(tmp_path):
+    # 向后兼容: 业务里的作业没有评测信息
+    assert load_task(write_task(tmp_path)).evaluation is None
+
+
+def test_task_with_evaluation(tmp_path):
+    evaluation = load_task(write_task(tmp_path, VALID + EVALUATION)).evaluation
+    assert evaluation.source == ["demo"] and evaluation.forbidden == ["parse_obj("]
+    assert evaluation.hidden_tests.known_failures[0].test == "tests/test_x.py::test_new_feature"
+
+
+@pytest.mark.parametrize("old, new, mentioned", [
+    ('reason = "参考答案新增的功能"', 'reason = ""', "reason"),                    # 已知的失败必须写原因
+    ('reason = "参考答案新增的功能"\n', "", "reason"),
+    ('commit = "51106bd0fc5cd88c97e91ea6a03ed2728a4a03fa"', 'commit = "51106bd"', "commit"),   # 短哈希
+    ('commit = "51106bd0fc5cd88c97e91ea6a03ed2728a4a03fa"', 'commit = "x51106bd0fc5cd88c97e91ea6a03ed2728a4a03fa"', "commit"),  # 前面多了字符
+    ('commit = "51106bd0fc5cd88c97e91ea6a03ed2728a4a03fa"', 'commit = "51106bd0fc5cd88c97e91ea6a03ed2728a4a03fa%"', "commit"),  # 后面多了字符
+    ('packages = ["demo"]', 'packges = ["demo"]', "packges"),                    # 字段名写错
+    ('source = ["demo"]', "source = []", "source"),
+])
+def test_invalid_evaluation_is_rejected(tmp_path, old, new, mentioned):
+    text = VALID + EVALUATION
+    assert old in text
+    with pytest.raises(TaskError, match=mentioned):
+        load_task(write_task(tmp_path, text.replace(old, new)))

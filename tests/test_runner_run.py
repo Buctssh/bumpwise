@@ -194,3 +194,38 @@ def test_run_repo_requires_a_git_repo(settings, tmp_path):
     with pytest.raises(RunnerError):
         run_repo(LocalEnvironment(tmp_path), AgentTask("p", ">=2", "s", "t"), settings=settings, llm=FakeLLM())
     assert not settings.runs_dir.exists()  # 失败在创建 trace 之前, 不会留下无用的记录
+
+
+# ---------------------------------------------------------------- 评测信息不能泄露给 agent
+
+class RecordingLLM(FakeLLM):
+    """记下发给模型的全部内容"""
+
+    def __init__(self, *responses) -> None:
+        super().__init__(*responses)
+        self.seen: list[str] = []
+
+    def create(self, system, tools, messages):
+        self.seen.append(json.dumps([system, tools, messages], ensure_ascii=False))
+        return super().create(system, tools, messages)
+
+
+def test_evaluation_never_reaches_the_agent(settings, remote, monkeypatch):
+    # 隐藏测试和参考答案一旦泄露给 agent, 评测就失去了意义
+    monkeypatch.setattr(runner_run, "prepare", fake_prepare)
+    secret_commit = "e" * 40
+    data = make_task(remote).model_dump()
+    data["evaluation"] = {
+        "source": ["src"], "packages": ["demo"], "forbidden": ["FORBIDDEN-MARKER"],
+        "hidden_tests": {"commit": secret_commit, "paths": ["tests"],
+                         "known_failures": [{"test": "tests/test_x.py::test_y", "reason": "REASON-MARKER"}]},
+    }
+    task = TaskSpec.model_validate(data)
+    llm = RecordingLLM(reply("完成"))
+    outcome = run(settings, task, llm)
+
+    sent = "".join(llm.seen)
+    prompts = "".join(p.read_text(encoding="utf-8") for p in (outcome.trace_dir / "prompts").iterdir())
+    for marker in (secret_commit, "FORBIDDEN-MARKER", "REASON-MARKER"):
+        assert marker not in sent, marker
+        assert marker not in prompts, marker
