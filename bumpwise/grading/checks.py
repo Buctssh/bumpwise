@@ -122,9 +122,10 @@ def check_hidden_tests(env: Environment, hidden: HiddenTestsSpec | None, files: 
     work = new_work_dir(env)
     for path, content in files.items():
         env.write_bytes(f"{work}/{path}", content)
-    # 用一个空的 pytest.ini, 并把 rootdir 和 confcutdir 都设为这个目录: 不读取仓库自己的 pytest 配置和根目录的 conftest,
-    # 隐藏测试的编号 (tests/test_x.py::test_y) 也就和题目里 known_failures 的写法一致
-    env.write_bytes(f"{work}/pytest.ini", b"[pytest]\n")
+    # 用一个自己的 pytest.ini, 并把 rootdir 和 confcutdir 都设为这个目录: 不读取仓库自己的 pytest 配置和根目录的 conftest,
+    # 隐藏测试的编号 (tests/test_x.py::test_y) 也就和题目里 known_failures 的写法一致.
+    # pythonpath = ..: 隐藏测试目录的上一层就是仓库根目录. 不加的话, 没有安装, 直接放在仓库根目录下的包就导入不了 (pytest 7 起支持)
+    env.write_bytes(f"{work}/pytest.ini", b"[pytest]\npythonpath = ..\n")
     args = [*_PYTEST_EXTRA, "-c", f"{work}/pytest.ini", "--rootdir", work, "--confcutdir", work, *[f"{work}/{p}" for p in hidden.paths]]
     report = run_pytest(env, args)
     if not report.ran:
