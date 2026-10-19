@@ -10,13 +10,11 @@
 from __future__ import annotations
 
 import json
-import secrets
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from ..env import Environment
+from .staging import stage_asset
 
-_PLUGIN = Path(__file__).parent / "assets" / "bumpwise_pytest_report.py"
 _PLUGIN_NAME = "bumpwise_pytest_report.py"
 _OUTPUT_CHARS = 4000
 PYTEST_TIMEOUT = 900
@@ -61,12 +59,8 @@ class PytestReport:
 
 def run_pytest(env: Environment, args: list[str], timeout: float = PYTEST_TIMEOUT) -> PytestReport:
     """在工作区里运行 pytest, 返回结构化的结果. args 是 pytest 的参数, 例如 ["-q", "tests"]"""
-    # 每次都用一个新的, 名字随机的目录: agent 可以往工作区里写任何文件, 如果目录是固定的, 它就能事先在里面
-    # 放一个假的 json.py (插件所在的目录在 sys.path 的最前面), 冒充标准库, 写出一份"全部通过"的结果.
-    # 目录自带内容为 * 的 .gitignore, 不会出现在 git status 和 diff 里
-    work = f".bumpwise-grader-{secrets.token_hex(4)}"
-    env.write_bytes(f"{work}/.gitignore", b"*\n")
-    env.write_bytes(f"{work}/{_PLUGIN_NAME}", _PLUGIN.read_bytes())
+    # 插件放进一个新的, 名字随机的目录 (为什么要随机, 见 staging.py)
+    work = stage_asset(env, _PLUGIN_NAME)
     report_path = f"{work}/report.json"
 
     # 插件和结果文件的路径由我们生成, 不含空格; pytest 的参数可能带空格, 用双引号 (cmd.exe 不认识单引号)
