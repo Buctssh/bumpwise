@@ -193,7 +193,7 @@ def test_normal_commands_are_allowed(policy, command):
 
 def test_known_bypass_is_not_caught(policy):
     # 记录的是'已知的局限', 不是期望的行为: 用一段 python 代码修改测试文件, 策略拦不住.
-    # 这正是需要 V4 独立验证和 V8 沙箱的原因. 如果这条测试失败了, 说明策略变强了, 要同步更新注释和文档
+    # 这正是需要 V4 独立验证和 V9 沙箱的原因. 如果这条测试失败了, 说明策略变强了, 要同步更新注释和文档
     command = "python -c \"open('tests/test_x.py', 'w').write('')\""
     assert policy.check("run_command", {"command": command}).allowed
 
