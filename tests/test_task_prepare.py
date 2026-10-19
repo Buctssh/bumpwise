@@ -4,7 +4,7 @@ import pytest
 
 from bumpwise.env import EnvironmentInfo, ExecResult, PathOutsideWorkdir
 from bumpwise.task import TaskSpec
-from bumpwise.task.prepare import PrepareError, TestOutcome, _summarize_tests, prepare
+from bumpwise.task.prepare import PrepareError, TestOutcome, _summarize_tests, prepare, prepare_baseline
 from bumpwise.task.workspace import Workspace
 
 BASE = "b" * 40
@@ -311,3 +311,26 @@ def test_summarize_tests_keeps_errors_and_last_line():
 def test_test_outcome_is_not_collected_by_pytest():
     # 这个测试文件导入了 TestOutcome; 没有 __test__ = False 的话, pytest 收集时会给出警告
     assert TestOutcome.__test__ is False
+
+
+# ---------------------------------------------------------------- prepare_baseline: 只做前半段
+
+def test_prepare_baseline_stops_at_the_old_version():
+    # grader 用它准备对比用的环境: 停在"旧代码 + 旧版本", 不修改依赖声明, 不提交, 不装新版本, 不冻结
+    env = FakeEnv()
+    events: list = []
+    outcome = prepare_baseline(make_task(), Workspace(env=env, path=None, base_commit=BASE), "python",
+                               on_event=lambda e, d: events.append(d["step"]))
+    assert outcome.passed
+    assert env.installed == "1.10.26"
+    assert env.files["pyproject.toml"].decode("utf-8") == PYPROJECT
+    assert not any("commit" in c or "2.14.1" in c or "status" in c for c in env.commands)
+    assert events[-1] == "baseline"
+
+
+def test_prepare_baseline_rejects_a_failing_baseline():
+    env = FakeEnv()
+    env.failures["pytest"] = ExecResult(exit_code=1, output="1 failed\n", timed_out=False, duration_s=1)
+    with pytest.raises(PrepareError) as e:
+        prepare_baseline(make_task(), Workspace(env=env, path=None, base_commit=BASE), "python")
+    assert e.value.step == "baseline"

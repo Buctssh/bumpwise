@@ -73,6 +73,20 @@ class PreparedTask:
     state: str                      # 给 agent 的'当前状态', 会写进任务消息
 
 
+def prepare_baseline(
+    task: TaskSpec,
+    workspace: Workspace,
+    base_python: str,
+    on_event: EventHandler | None = None,
+    require_passing_baseline: bool = True,
+) -> TestOutcome:
+    """准备流水线的前半段: 建 venv, 安装, 装上旧版本, 跑基线测试, 工作区停留在 "旧代码 + 旧版本"的状态.
+
+    prepare() 用它作为第一步; grader 也用它准备一个对比用的旧版本环境 (接口表面,新旧行为的对比)
+    """
+    return _baseline(_Steps(workspace.env, on_event), task, base_python, require_passing_baseline)
+
+
 def prepare(
     task: TaskSpec,
     workspace: Workspace,
@@ -85,6 +99,24 @@ def prepare(
     require_passing_baseline: 评测时为 True, 基线不过的题目直接作废; 业务里的仓库常有本来就失败的测试, 可以传 False, 只记录结果.
     """
     steps = _Steps(workspace.env, on_event)
+    m = task.migration
+    baseline = _baseline(steps, task, base_python, require_passing_baseline)
+
+    # 先提交依赖声明, 再装新版本: 提交里只有 edits 改的文件, harness 的改动不会被算成 agent 的
+    steps.apply_edits(m.edits)
+    if m.edits:
+        steps.commit([e.file for e in m.edits], f"bumpwise: 把 {m.package} 的版本限制升级到 {m.target} (由 harness 完成)")
+    start_commit = steps.head()
+
+    steps.install_version(m.package, m.to_version)
+    upgraded = steps.test("upgraded", m.test_command)
+    # 冻结放在最后: 前面的每一步都可能产生文件 (venv, egg-info, .pytest_cache)
+    steps.freeze()
+    return PreparedTask(task, workspace, start_commit, baseline, upgraded, _describe_state(m, upgraded))
+
+
+def _baseline(steps: _Steps, task: TaskSpec, base_python: str, require_passing_baseline: bool) -> TestOutcome:
+    """前半段的具体步骤, prepare 和 prepare_baseline 共用"""
     m = task.migration
 
     steps.check_python(base_python, task.environment.python)
@@ -99,18 +131,7 @@ def prepare(
     baseline = steps.test("baseline", m.test_command)
     if require_passing_baseline and not baseline.passed:
         raise PrepareError("baseline", f"旧版本 ({m.package} {m.from_version}) 下测试就没有通过, 题目无效:\n{baseline.summary}")
-
-    # 先提交依赖声明, 再装新版本: 提交里只有 edits 改的文件, harness 的改动不会被算成 agent 的
-    steps.apply_edits(m.edits)
-    if m.edits:
-        steps.commit([e.file for e in m.edits], f"bumpwise: 把 {m.package} 的版本限制升级到 {m.target} (由 harness 完成)")
-    start_commit = steps.head()
-
-    steps.install_version(m.package, m.to_version)
-    upgraded = steps.test("upgraded", m.test_command)
-    # 冻结放在最后: 前面的每一步都可能产生文件 (venv, egg-info, .pytest_cache)
-    steps.freeze()
-    return PreparedTask(task, workspace, start_commit, baseline, upgraded, _describe_state(m, upgraded))
+    return baseline
 
 
 def _describe_state(m: MigrationSpec, upgraded: TestOutcome) -> str:
