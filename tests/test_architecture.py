@@ -1,6 +1,6 @@
 """架构测试: 检查包之间的依赖方向, 见 docs/decisions.md 的 ADR-014.
 
-依赖只能从上往下:  cli → task → harness → tools → env,  harness → llm → config
+依赖只能从上往下:  cli → runner → task → harness → tools → env,  harness → llm → config
 下层不知道上层的存在. 例如 harness 导入了 cli, 或者 env 导入了 tools, 这里都会失败.
 新增一个包时, 必须先在 ALLOWED 里写明它在哪一层, 可以依赖谁, 否则这里也会失败.
 """
@@ -20,8 +20,9 @@ ALLOWED: dict[str, set[str]] = {
     "llm": {"config"},                                                   # 模型接入
     "tools": {"env"},                                                    # agent 的工具, 通过 env 操作
     "harness": {"config", "env", "llm", "tools"},                        # agent 运行时
-    "task": {"config", "env", "harness"},                                # 题目, 工作区, 准备流水线
-    "cli": {"config", "env", "llm", "tools", "harness", "task"},         # 命令行, 最上层
+    "task": {"config", "env", "harness"},                                # 题目, 工作区, 准备流水线 (不知道模型的存在)
+    "runner": {"config", "env", "llm", "tools", "harness", "task"},      # 编排一次运行 (不知道命令行的存在)
+    "cli": {"config", "env", "llm", "tools", "harness", "task", "runner"},  # 命令行, 最上层
     "__main__": {"cli"},
 }
 
