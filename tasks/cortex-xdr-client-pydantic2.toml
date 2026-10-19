@@ -29,3 +29,25 @@ notes = ""
 file = "pyproject.toml"
 old = 'pydantic = "^1.8.2"'
 new = 'pydantic = ">=2,<3"'
+
+# ============================================================================ 评测信息
+# 只给 grader 用: 准备流水线和 agent 都看不到这一段. 隐藏测试和参考答案一旦泄露给 agent, 评测就失去了意义
+[evaluation]
+source = ["cortex_xdr_client"]
+packages = ["cortex_xdr_client"]
+# 迁移完成后源代码中不应再出现的 pydantic v1 写法. 不放 ".json(": 它会匹配到 requests 的 response.json(), V0 中 36 处全是误报
+forbidden = ["parse_obj(", "parse_raw(", "class Config:", "__root__", ".dict(", "update_forward_refs(", "@validator", "@root_validator"]
+
+[evaluation.hidden_tests]
+# 参考答案: 作者的 PR #184 "Migrate client models to Pydantic v2" 的最后一个提交
+commit = "51106bd0fc5cd88c97e91ea6a03ed2728a4a03fa"
+paths = ["tests"]
+
+# 作者的 PR 不只是迁移, 还新增了功能. 这些测试在"只做迁移"的结果上一定会失败, 不算 agent 的缺陷 (见 docs/v0/cortex-xdr-client.md)
+[[evaluation.hidden_tests.known_failures]]
+test = "tests/test_models_v2.py::test_unknown_fields_preserved_at_every_response_level"
+reason = "作者新增的功能: 所有响应模型都保留未知字段. V0 在 v1 原代码上核实过: GetAlertsResponse 不保留未知字段"
+
+[[evaluation.hidden_tests.known_failures]]
+test = "tests/test_models_v2.py::test_aliases_accept_python_and_wire_names"
+reason = "作者新增的功能: 所有响应模型都接受字段名和别名两种写法. V0 在 v1 原代码上核实过: GetCasesResponseItem(total_count=2) 会报错"
