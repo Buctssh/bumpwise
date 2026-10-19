@@ -53,6 +53,7 @@ class Settings:
     llm_max_retries: int = 3                    # 调用模型失败时，SDK 自动重试的次数
     llm_timeout: float = 300.0                  # 调用模型一次的超时时间，单位秒
     runs_dir: Path = PROJECT_ROOT / "runs"     # 每次运行的记录保存在这里
+    workspace_dir: Path = PROJECT_ROOT / "workspace"   # 本地镜像和每次运行的工作区 (见 task/workspace.py)
 
     @classmethod
     def from_env(cls) -> Settings:
