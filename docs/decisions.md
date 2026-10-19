@@ -358,20 +358,23 @@ bumpwise/
 ├── env/             执行平面: Environment 接口和实现
 ├── tools/           agent 的工具 (通过 env 操作)
 ├── harness/         agent 运行时: loop, policy, prompts, trace
-├── task/            题目, 工作区, 准备流水线 (V3)
+├── task/            题目, 工作区, 准备流水线 (V3). 不知道模型的存在
+├── runner/          编排一次运行: (准备) → agent 循环 → 运行记录 (V3 模块 4 新增). 不知道命令行的存在
 ├── cli/             命令行: 每个子命令一个模块 (run.py, show.py), 加上终端打印 (progress.py)
 └── __main__.py      只有几行, 调用 cli.main
 ```
 
-以后的 `grading/` (V4) 和 `evaluation/` (V6) 放在 `task/` 和 `cli/` 之间的那一层.
+以后的 `grading/` (V4) 放在 `runner/` 和 `task/` 之间 (runner 在 agent 结束后调用它), `evaluation/` (V6) 放在 `cli/` 和 `runner/` 之间 (它批量调用 runner).
 
 依赖只能从上往下, 下层不知道上层的存在:
 
 ```
-cli  →  task (以后还有 grading, evaluation)  →  harness  →  tools  →  env
-                                                  ↓
-                                                 llm  →  config
+cli  →  runner  →  task  →  harness  →  tools  →  env
+                             ↓
+                            llm  →  config
 ```
+
+V3 模块 4 新增 `runner/` 的原因: "加载题目 → 创建工作区 → 准备 → agent 循环 → trace"这段编排, 原来一半在 `cli/run.py` 里. 以后 V6 的批量评测也要用它, 而批量评测不经过命令行; 放进 `task/` 的话, `task` 就要依赖 `llm` 和 `tools`, 而题目, 工作区, 准备流水线本来和"用哪个模型"无关.
 
 - 每个包允许依赖谁, 写在 `tests/test_architecture.py` 的 `ALLOWED` 里. 测试扫描每个文件的 import, 违反依赖方向就失败;
 - 新增一个包时, 不先在 `ALLOWED` 里声明它在哪一层, 测试也会失败;
