@@ -47,7 +47,7 @@ def test_settings_meta_is_a_whitelist():
     assert "api_key" not in meta and "sk-secret" not in str(meta)
     # 白名单: Settings 新增字段时, 不会自动进入 trace. 新增字段要有意识地决定写不写进来
     not_recorded = {f.name for f in dataclasses.fields(Settings)} - set(meta)
-    assert not_recorded == {"api_key", "runs_dir", "workspace_dir"}
+    assert not_recorded == {"api_key", "runs_dir", "workspace_dir", "evals_dir"}
 
 
 def test_harness_version():
