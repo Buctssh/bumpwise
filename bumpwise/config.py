@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 # 项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# 一次任务默认的 token 预算 (预算怎样控制运行, 见 harness/budget.py; 默认值是多少, 属于配置).
+# 暂定 (ADR-018): 003, 004 测试通过时分别用了 122 万和 109 万, 但那时还没有做完验证. 只有 2 次运行, V6 用"预算和通过率"的曲线校准
+DEFAULT_TOKEN_BUDGET = 2_000_000
+
 
 @dataclass(frozen=True)
 class ProviderProfile:
@@ -47,7 +51,10 @@ class Settings:
     base_url: str | None
     model: str
     max_tokens: int = 8192                      # 模型单次回复最多生成多少 token
-    max_turns: int = 40                         # 一次任务最多调用模型多少次,防止无限循环
+    # 正常的限制是 token 预算 (见 harness/budget.py), 轮数只是断路器, 正常情况下不应该触发.
+    # 80: 按 003, 004 的增长速度推算, 默认预算大约在第 45 到 53 轮用完, 留出余量 (ADR-018)
+    max_turns: int = 80                         # 一次任务最多调用模型多少次
+    token_budget: int = DEFAULT_TOKEN_BUDGET     # 一次任务最多处理多少 token. 题目里可以单独设置 ([budget])
     command_timeout: int = 60                   # 执行一个命令的超时时间,单位秒
     max_output_chars: int = 20_000              # 工具返回模型的内容最多多少字符,超出就截断
     llm_max_retries: int = 3                    # 调用模型失败时，SDK 自动重试的次数
@@ -88,4 +95,5 @@ class Settings:
             model=os.getenv("LLM_MODEL") or profile.default_model,
             # 默认值直接取字段的默认值, 不在这里重复写 40
             max_turns=int(os.getenv("BUMPWISE_MAX_TURNS") or cls.max_turns),
+            token_budget=int(os.getenv("BUMPWISE_TOKEN_BUDGET") or cls.token_budget),
         )

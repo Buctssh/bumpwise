@@ -51,6 +51,12 @@ class MigrationSpec(_Spec):
     edits: list[Edit] = Field(default_factory=list)
 
 
+class BudgetSpec(_Spec):
+    """这道题的预算. 不写时用配置里的默认值 (config.DEFAULT_TOKEN_BUDGET)"""
+
+    tokens: int = Field(gt=0, description="一次运行最多处理多少 token (每一轮的完整输入 + 输出, 累加)")
+
+
 class KnownFailure(_Spec):
     """隐藏测试中预期会失败的测试, 必须写明原因"""
 
@@ -82,6 +88,7 @@ class TaskSpec(_Spec):
     repo: RepoSpec
     environment: EnvironmentSpec
     migration: MigrationSpec
+    budget: BudgetSpec | None = None                # 不写时用配置里的默认预算
     evaluation: EvaluationSpec | None = None        # 只有评测题目才有, agent 永远用不到它
 
 
