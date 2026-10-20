@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from bumpwise.harness.trace import EVENTS_FILE, TraceWriter, load_events, load_meta, new_run_id
+from bumpwise.harness.trace import EVENTS_FILE, TraceFiles, TraceWriter, load_events, load_meta, new_run_id
 
 
 @pytest.fixture
@@ -136,3 +136,14 @@ def test_run_id_sorts_by_time_and_is_safe_as_dir_name():
     assert "/" not in run_id and ".." not in run_id
     assert new_run_id("a") != new_run_id("a")
     assert new_run_id("").split("-")[2] == "run"
+
+
+def test_trace_files_write_into_an_existing_run(tmp_path):
+    # 运行结束以后补写文件 (比如补评分): 不重新创建目录, 也不碰事件流, 同样脱敏
+    writer = TraceWriter(tmp_path, "run-1")
+    writer("stop", {"status": "finished"})
+    writer.close()
+    files = TraceFiles(writer.dir, secrets=["sk-secret-value-123"])
+    files.write_json("grade.json", {"note": "sk-secret-value-123"})
+    assert json.loads((writer.dir / "grade.json").read_text(encoding="utf-8")) == {"note": "***"}
+    assert len((writer.dir / "events.jsonl").read_text(encoding="utf-8").splitlines()) == 1

@@ -6,6 +6,7 @@
     messages.json   结束时完整的对话历史, 也就是最后一次发给模型的上下文
     prompts/        渲染好的 system prompt 和任务消息. 模板以后被修改了, 也能看到这次实际用的内容
     diff.patch      结束时工作区的改动, 包括新建的文件
+    grade.json      评分报告 (题目有评测信息时), 可以事后重新评分覆盖它
 
 设计:
     - 事件按发生的顺序追加, 每写一行就 flush: 程序崩溃或被 Ctrl+C 打断时, 已经发生的事件都还在;
@@ -49,16 +50,45 @@ def _to_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
-class TraceWriter:
+class TraceFiles:
+    """运行目录里的文件 (meta.json, messages.json, diff.patch, grade.json 等): 原子写入, 写入前脱敏.
+    TraceWriter 在它的基础上加上事件流. 运行结束以后补写文件 (比如事后补评分) 时, 直接用它打开已有的目录"""
+
+    def __init__(self, run_dir: Path, secrets: Iterable[str] = ()) -> None:
+        self.dir = Path(run_dir)
+        self._secrets = sorted({s for s in secrets if s and len(s) >= _MIN_SECRET_LENGTH},
+                               key=len, reverse=True)
+
+    def write_meta(self, meta: dict[str, Any]) -> None:
+        self._atomic_write(META_FILE, json.dumps(meta, ensure_ascii=False, indent=2, default=str) + "\n")
+
+    def write_json(self, name: str, value: Any) -> None:
+        self._atomic_write(name, json.dumps(value, ensure_ascii=False, indent=1, default=str) + "\n")
+
+    def write_text(self, name: str, text: str) -> None:
+        self._atomic_write(name, text)
+
+    def _redact(self, text: str) -> str:
+        for secret in self._secrets:
+            text = text.replace(secret, _REDACTED)
+        return text
+
+    def _atomic_write(self, name: str, text: str) -> None:
+        target = self.dir / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f".{target.name}.tmp")
+        tmp.write_text(self._redact(text), encoding="utf-8", newline="\n")
+        os.replace(tmp, target)
+
+
+class TraceWriter(TraceFiles):
     """一次运行的记录, 同时也是一个事件回调, 可以直接作为 AgentLoop 的 on_event"""
 
     def __init__(self, runs_dir: Path, run_id: str, secrets: Iterable[str] = ()) -> None:
         self.run_id = run_id
-        self.dir = Path(runs_dir) / run_id
         # exist_ok=False: 运行编号重复时直接报错, 绝不覆盖已有的记录
-        self.dir.mkdir(parents=True, exist_ok=False)
-        self._secrets = sorted({s for s in secrets if s and len(s) >= _MIN_SECRET_LENGTH},
-                               key=len, reverse=True)
+        (Path(runs_dir) / run_id).mkdir(parents=True, exist_ok=False)
+        super().__init__(Path(runs_dir) / run_id, secrets)
         self._seq = 0
         self._start = time.monotonic()
         # newline="\n": 在 Windows 上也只写 \n, JSONL 文件在各个平台上完全一样
@@ -76,34 +106,9 @@ class TraceWriter:
         self._events.write(self._redact(_to_json(record)) + "\n")
         self._events.flush()
 
-    # ------------------------------------------------------------------ 文件
-
-    def write_meta(self, meta: dict[str, Any]) -> None:
-        self._atomic_write(META_FILE, json.dumps(meta, ensure_ascii=False, indent=2, default=str) + "\n")
-
-    def write_json(self, name: str, value: Any) -> None:
-        self._atomic_write(name, json.dumps(value, ensure_ascii=False, indent=1, default=str) + "\n")
-
-    def write_text(self, name: str, text: str) -> None:
-        self._atomic_write(name, text)
-
     def close(self) -> None:
         if not self._events.closed:
             self._events.close()
-
-    # ------------------------------------------------------------------ 内部
-
-    def _redact(self, text: str) -> str:
-        for secret in self._secrets:
-            text = text.replace(secret, _REDACTED)
-        return text
-
-    def _atomic_write(self, name: str, text: str) -> None:
-        target = self.dir / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(f".{target.name}.tmp")
-        tmp.write_text(self._redact(text), encoding="utf-8", newline="\n")
-        os.replace(tmp, target)
 
 
 # ============================================================================ 读取
