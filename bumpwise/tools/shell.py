@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from pydantic import Field
 
 from .base import Tool, ToolContext, ToolError, ToolParams
@@ -28,6 +30,23 @@ from .base import Tool, ToolContext, ToolError, ToolParams
 
 
 MAX_TIMEOUT = 1800  # 单条命令的超时时间最多 30 分钟，防止模型设置一个特别大的值让任务一直卡住
+
+# run_command 结果的第一行. 护栏要从结果里读出退出码: 格式的写法 (format_result) 和解析 (parse_result) 都在这里, 只定义一次.
+# 两者必须一致, tests/test_tools_shell.py 用往返测试检查: 解析写出来的结果, 要还原出原来的值
+_RESULT_HEADER = re.compile(r"^退出码：(-?\d+)（耗时 [\d.]+ 秒）\n")
+
+
+def format_result(exit_code: int, duration_s: float, output: str) -> str:
+    return f"退出码：{exit_code}（耗时 {duration_s:.1f} 秒）\n{output}"
+
+
+def parse_result(content: str) -> tuple[int, str] | None:
+    """从 run_command 的结果里拆出退出码和输出 (不含耗时). 不是正常执行完的结果 (比如超时) 时返回 None"""
+    # 拆掉耗时: 同一条命令每次的耗时都不一样, 重复检测要比较的是"退出码 + 输出"
+    match = _RESULT_HEADER.match(content)
+    if match is None:
+        return None
+    return int(match.group(1)), content[match.end():]
 
 
 # 继承 ToolParams：模型传了未定义的参数会被明确拒绝
@@ -65,7 +84,7 @@ def run_command(args: RunCommandParams, ctx: ToolContext) -> str:
         )
 
     # 退出码不为 0 不算工具出错：命令确实执行完了，只是结果是失败（比如测试没通过），这正是模型需要看到的
-    return f"退出码：{result.exit_code}（耗时 {result.duration_s:.1f} 秒）\n{output}"
+    return format_result(result.exit_code, result.duration_s, output)
 
 
 # 工具名用 run_command 而不是 run 或 bash：
