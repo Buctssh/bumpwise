@@ -23,7 +23,7 @@ from ..harness.budget import TokenBudget
 from ..harness.guards import default_guards
 from ..harness.loop import AgentLoop, EventHandler, RunResult, Status, fan_out
 from ..harness.policy import RulePolicy
-from ..harness.prompts import build_system_prompt, build_task_message
+from ..harness.prompts import SYSTEM_PROMPT, build_system_prompt, build_task_message
 from ..harness.trace import MESSAGES_FILE, TraceWriter, new_run_id, now_iso
 from ..llm import LLMClient
 from ..task import TaskSpec
@@ -49,6 +49,21 @@ class AgentTask:
     test_command: str
     notes: str = ""
     budget: int | None = None   # 这道题的 token 预算. None 表示用配置里的默认值
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    """agent 怎样运行: system prompt 的版本, 用哪些护栏, 预算, 轮数上限. 默认值就是现在的标准配置.
+
+    评测的对照组 (arm) 就是一组不同的 AgentConfig: 比如"去掉护栏", "换回 system_v2", "预算减半".
+    题目 (TaskSpec) 描述"做什么", AgentConfig 描述"怎样做", 两者分开, 同一道题才能用不同的配置去跑.
+    """
+
+    name: str = "default"                   # 对照组的名字, 写进 meta, 统计时按它分组
+    system_prompt: str = SYSTEM_PROMPT       # 模板的名字, 见 prompts/
+    guards: tuple[str, ...] | None = None    # 用哪些护栏. None: 全部的护栏; (): 一个都不用
+    token_budget: int | None = None          # 设置了就覆盖题目里的 [budget]. None: 题目里的, 没有时用配置的默认值
+    max_turns: int | None = None             # None: 用配置的值
 
 
 @dataclass(frozen=True)
@@ -79,6 +94,7 @@ def run_task(
     base_python: str,
     observers: Sequence[EventHandler] = (),
     grade: bool = True,
+    agent: AgentConfig = AgentConfig(),
 ) -> RunOutcome:
     """照着题目运行一次: 创建工作区 → 准备 → agent 循环 → 运行记录 → 评分.
     grade=False 时不评分 (调试时省掉准备旧版本的时间), 之后可以用 grade 命令补上"""
@@ -124,7 +140,7 @@ def run_task(
         m = task.migration
         agent_task = AgentTask(m.package, m.target, prepared.state, m.test_command, m.notes,
                                budget=task.budget.tokens if task.budget is not None else None)
-        outcome = _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event)
+        outcome = _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event, agent)
         # 只给正常结束的运行评分: 其他情况 (达到轮数上限, 交给人, 调用模型失败) 工作区停在不确定的状态, 评分没有意义.
         # 评分在工作区关闭之前进行 (finally 里才关闭): 以后工作区是容器, 关闭就销毁了
         if grade and outcome.status == Status.FINISHED.value:
@@ -151,6 +167,7 @@ def run_repo(
     settings: Settings,
     llm: LLMClient,
     observers: Sequence[EventHandler] = (),
+    agent: AgentConfig = AgentConfig(),
 ) -> RunOutcome:
     """在一个已经准备好的仓库上直接运行 agent, 不经过准备流水线. env 由调用方创建, 也由调用方关闭"""
     # 记下起点. 不是 git 仓库时这里就会失败, 此时还没有创建 trace, 不会留下一条无用的记录
@@ -170,7 +187,7 @@ def run_repo(
     trace.write_meta(meta)
     on_event("run_start", {"run_id": run_id, "trace_dir": str(trace.dir), "task_id": None})
     try:
-        return _run_agent(env, start_commit, agent_task, settings, llm, trace, meta, on_event)
+        return _run_agent(env, start_commit, agent_task, settings, llm, trace, meta, on_event, agent)
     except BaseException as e:
         _record_crash(trace, meta, e)
         raise
@@ -187,16 +204,24 @@ def _run_agent(
     trace: TraceWriter,
     meta: dict[str, Any],
     on_event: EventHandler,
+    agent: AgentConfig,
 ) -> RunOutcome:
     """两种运行方式共用的部分: 准备 agent 的上下文, 运行循环, 写完运行记录"""
     # 临时目录在冻结之后才创建: 它自带一个内容为 * 的 .gitignore, 不会让工作区变"脏"
     env.write_bytes(f"{SCRATCH_DIR}/.gitignore", b"*\n")
     policy = RulePolicy(protected_packages=[agent_task.package])
     # 护栏有状态, 每次运行都新建
-    guards = default_guards(agent_task.test_command, SCRATCH_DIR)
-    budget = TokenBudget(agent_task.budget or settings.token_budget)
+    guards = default_guards(agent_task.test_command, SCRATCH_DIR, agent.guards)
+    # 预算的优先级: 对照组 > 题目 > 配置的默认值. 记下来自哪里: 比较两次运行时, 预算不同也是一种"条件不同"
+    if agent.token_budget:
+        budget, budget_source = TokenBudget(agent.token_budget), "agent"
+    elif agent_task.budget:
+        budget, budget_source = TokenBudget(agent_task.budget), "task"
+    else:
+        budget, budget_source = TokenBudget(settings.token_budget), "default"
+    max_turns = agent.max_turns or settings.max_turns
     info = env.describe()
-    system = build_system_prompt(info, policy.describe(), SCRATCH_DIR)
+    system = build_system_prompt(info, policy.describe(), SCRATCH_DIR, name=agent.system_prompt)
     task_message = build_task_message(
         agent_task.package, agent_task.target, agent_task.state, agent_task.test_command, agent_task.notes
     )
@@ -210,16 +235,19 @@ def _run_agent(
         policy=policy.describe(),
         # 记下用了哪些护栏: 对比两次运行时, 护栏不同也是一种"条件不同"
         guards=[guard.name for guard in guards],
-        # 预算来自题目还是默认值: 比较两次运行时, 预算不同也是一种"条件不同"
-        budget={"tokens": budget.tokens, "source": "task" if agent_task.budget else "default"},
+        budget={"tokens": budget.tokens, "source": budget_source},
+        # 这次运行用的配置 (对照组): 统计时按 agent.name 分组
+        agent=dataclasses.asdict(agent),
+        max_turns=max_turns,
     )
     trace.write_meta(meta)
     on_event("agent_start", {
         "workdir": env.workdir,
         "head": start_commit,
         "model": f"{settings.provider} / {settings.model}",
-        "max_turns": settings.max_turns,
+        "max_turns": max_turns,
         "budget": budget.tokens,
+        "agent": agent.name,
         "prompts": {"system": f"{system.name} {system.sha256[:12]}", "task": f"{task_message.name} {task_message.sha256[:12]}"},
     })
 
@@ -228,7 +256,7 @@ def _run_agent(
         registry=build_default_registry(),
         policy=policy,
         ctx=ToolContext(env=env, command_timeout=settings.command_timeout, max_output_chars=settings.max_output_chars),
-        max_turns=settings.max_turns,
+        max_turns=max_turns,
         # 同一个 on_event: 准备阶段和 agent 阶段的事件, 按时间顺序写进同一个 events.jsonl
         on_event=on_event,
         guards=guards,
