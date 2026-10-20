@@ -6,5 +6,7 @@
 from __future__ import annotations
 
 from .records import RunRecord, load_record
+from .stats import Difference, Proportion, Summary, compare, outcome, pass_at_k, pass_rate, summarize, wilson
 
-__all__ = ["RunRecord", "load_record"]
+__all__ = ["Difference", "Proportion", "RunRecord", "Summary", "compare", "load_record", "outcome", "pass_at_k",
+           "pass_rate", "summarize", "wilson"]
