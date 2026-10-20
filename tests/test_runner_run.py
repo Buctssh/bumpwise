@@ -12,6 +12,7 @@ from bumpwise.env import LocalEnvironment
 from bumpwise.llm import LLMResponse
 from bumpwise.runner import CRASHED, INTERRUPTED, PREPARE_FAILED, AgentTask, RunnerError, run_repo, run_task
 from bumpwise.task import TaskSpec
+from bumpwise.task.spec import BudgetSpec
 from bumpwise.task.prepare import PrepareError, PreparedTask, TestOutcome
 from bumpwise.task.workspace import LocalWorkspaceProvider
 
@@ -22,7 +23,7 @@ class FakeLLM:
     def __init__(self, *responses: LLMResponse) -> None:
         self._responses = list(responses)
 
-    def create(self, system, tools, messages):
+    def create(self, system, tools, messages, tool_choice="auto"):
         return self._responses.pop(0)
 
 
@@ -205,9 +206,9 @@ class RecordingLLM(FakeLLM):
         super().__init__(*responses)
         self.seen: list[str] = []
 
-    def create(self, system, tools, messages):
+    def create(self, system, tools, messages, tool_choice="auto"):
         self.seen.append(json.dumps([system, tools, messages], ensure_ascii=False))
-        return super().create(system, tools, messages)
+        return super().create(system, tools, messages, tool_choice)
 
 
 def test_evaluation_never_reaches_the_agent(settings, remote, monkeypatch):
@@ -242,3 +243,18 @@ def test_guards_are_recorded_and_used(settings, remote, monkeypatch):
     meta = load_meta(outcome)
     assert meta["guards"] == ["pipe_exit_code", "repeat", "test_cadence"]
     assert meta["result"]["guard_notices"] == 1      # 第二次读同一个文件, 内容没变, repeat 提醒了一次
+
+
+def test_task_budget_overrides_the_default(settings, remote, monkeypatch):
+    monkeypatch.setattr(runner_run, "prepare", fake_prepare)
+    task = make_task(remote).model_copy(update={"budget": BudgetSpec(tokens=123_456)})
+    outcome = run(settings, task, FakeLLM(reply("完成")))
+    meta = load_meta(outcome)
+    assert meta["budget"] == {"tokens": 123_456, "source": "task"}
+    assert meta["settings"]["token_budget"] == settings.token_budget       # 配置里的默认值也照样记下
+
+
+def test_default_budget_comes_from_settings(settings, remote, monkeypatch):
+    monkeypatch.setattr(runner_run, "prepare", fake_prepare)
+    outcome = run(settings, make_task(remote), FakeLLM(reply("完成")))
+    assert load_meta(outcome)["budget"] == {"tokens": settings.token_budget, "source": "default"}

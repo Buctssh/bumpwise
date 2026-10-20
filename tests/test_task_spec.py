@@ -178,3 +178,23 @@ def test_invalid_evaluation_is_rejected(tmp_path, old, new, mentioned):
     assert old in text
     with pytest.raises(TaskError, match=mentioned):
         load_task(write_task(tmp_path, text.replace(old, new)))
+
+
+# ---------------------------------------------------------------- 预算 (V5)
+
+def test_budget_is_optional(tmp_path):
+    assert load_task(write_task(tmp_path)).budget is None
+
+
+def test_budget_can_be_set_per_task(tmp_path):
+    path = write_task(tmp_path)
+    path.write_text(path.read_text(encoding="utf-8") + "\n[budget]\ntokens = 800000\n", encoding="utf-8")
+    assert load_task(path).budget.tokens == 800_000
+
+
+@pytest.mark.parametrize("value", ["0", "-1", '"many"'])
+def test_invalid_budget_is_rejected(tmp_path, value):
+    path = write_task(tmp_path)
+    path.write_text(path.read_text(encoding="utf-8") + f"\n[budget]\ntokens = {value}\n", encoding="utf-8")
+    with pytest.raises(TaskError, match="tokens"):
+        load_task(path)
