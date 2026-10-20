@@ -189,7 +189,7 @@ def test_run_writes_trace(repo, fake_llm, tmp_path):
     assert meta["status"] == "finished"
     assert meta["result"]["turns"] == 3 and meta["mode"] == "repo"
     assert "exit_code" not in meta["result"]  # 退出码是 cli 的事, runner 不知道它
-    assert meta["prompts"]["system"]["name"] == "system_v2"
+    assert meta["prompts"]["system"]["name"] == "system_v3"
     assert meta["repo"]["head_start"] == meta["repo"]["head_end"]
     assert meta["task"]["package"] == "pydantic"
     assert meta["harness"]["commit"]

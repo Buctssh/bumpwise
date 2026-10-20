@@ -7,7 +7,9 @@ import pytest
 
 from bumpwise.env import EnvironmentInfo
 from bumpwise.harness.policy import RulePolicy
+from bumpwise.harness.loop import BUDGET_PREFIX, GUARD_PREFIX
 from bumpwise.harness.prompts import (
+    PROMPTS_DIR,
     PromptError,
     bullet_list,
     build_system_prompt,
@@ -15,6 +17,7 @@ from bumpwise.harness.prompts import (
     render,
 )
 from bumpwise.tools import build_default_registry
+from bumpwise.tools.handoff import ESCALATE
 
 WINDOWS = EnvironmentInfo(os_name="Windows", shell="cmd.exe")
 
@@ -146,3 +149,34 @@ def test_tool_names_in_system_prompt_exist(system_prompt):
     mentioned = set(re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", system_prompt.text))
     assert mentioned <= names, mentioned - names
     assert {"read_file", "run_command"} <= mentioned  # 确认扫描本身是有效的
+
+
+# ---------------------------------------------------------------- system_v3 (V5)
+
+def test_v3_explains_harness_notices_and_escalate(system_prompt):
+    text = system_prompt.text
+    assert system_prompt.name == "system_v3"
+    # loop 用的前缀, prompt 里要原样出现, 模型才能对上
+    assert GUARD_PREFIX in text and BUDGET_PREFIX in text
+    assert "调用 escalate 工具" in text and ESCALATE.name == "escalate"
+    assert "进入收尾阶段" in text          # 和预算的提醒用的是同一个说法
+    assert "第一行写\"需要人工处理\"" not in text     # 不再用文字标记
+
+
+def test_v3_has_no_task_specific_hints():
+    # 只写通用的原则: 写进某一道题的具体问题, 再拿这道题评测, 等于提前告诉了 agent 答案.
+    # 检查模板本身: 渲染之后, 权限规则里会合法地出现依赖的名字
+    template = (PROMPTS_DIR / "system_v3.md").read_text(encoding="utf-8")
+    for hint in ("coerce_numbers_to_str", "pydantic", "cortex", "数字转字符串", "自动转换", "RootModel", "populate_by_name"):
+        assert hint not in template
+
+
+def test_cmd_notes_explain_pipes_instead_of_claiming_tail_is_missing(system_prompt):
+    assert "退出码是管道最后一个命令的" in system_prompt.text
+    assert "没有 grep, head, tail" not in system_prompt.text
+
+
+def test_system_v2_is_kept_for_comparison():
+    prompt = render("system_v2", {"os_name": "Windows", "shell": "cmd.exe", "shell_notes": "", "scratch_dir": ".bumpwise",
+                                  "rules": "- x"})
+    assert "第一行写\"需要人工处理\"" in prompt.text
