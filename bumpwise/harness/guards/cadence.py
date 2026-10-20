@@ -13,13 +13,19 @@ from .base import CallOutcome, Guard
 DEFAULT_EVERY = 6
 
 
+def is_test_command(command: str, test_command: str) -> bool:
+    """这条命令是不是在运行测试. 测试命令里有 pytest 时, 命令里出现 pytest 就算 (模型常常会加上参数,
+    比如 python -m pytest tests/test_x.py -x), 否则要包含完整的测试命令. 和 grader 一样, 现在只适配 pytest.
+    护栏和评测的统计 (evaluation/records.py) 都用它: 两边的判断必须一致, 否则护栏认为跑了测试, 统计却不算"""
+    keyword = "pytest" if "pytest" in test_command else test_command
+    return keyword in command
+
+
 class TestCadenceGuard(Guard):
     name = "test_cadence"
     __test__ = False    # 类名以 Test 开头: 告诉 pytest 这不是测试类, 否则测试文件导入它时会被当成测试去收集
 
     def __init__(self, test_command: str, scratch_dir: str, every: int = DEFAULT_EVERY) -> None:
-        # 判断"运行了测试": 测试命令里有 pytest 时, 命令里出现 pytest 就算 (模型常常会加上参数), 否则要包含完整的测试命令
-        self._test_keyword = "pytest" if "pytest" in test_command else test_command
         self._test_command = test_command
         self._scratch = scratch_dir.strip("/").replace("\\", "/") + "/"  # 临时目录里的实验脚本不是对源代码的修改
         self._every = every
@@ -29,7 +35,7 @@ class TestCadenceGuard(Guard):
     def after_call(self, outcome: CallOutcome) -> str | None:
         call = outcome.call
         if call.name == RUN_COMMAND.name:
-            if self._test_keyword in call.args.get("command", ""):
+            if is_test_command(call.args.get("command", ""), self._test_command):
                 # 只要运行了就清零, 不管通过没有: 这个护栏管的是"有没有及时运行"
                 self._edits = 0
                 self._files.clear()
