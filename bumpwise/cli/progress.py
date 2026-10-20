@@ -36,7 +36,7 @@ class ProgressPrinter:
                   + (f" ({data['error']})" if data.get("error") else ""))
         elif event == "agent_start":
             print(f"\n仓库: {data['workdir']} (HEAD {data['head'][:12]})")
-            print(f"模型: {data['model']}, 最多调用 {data['max_turns']} 次")
+            print(f"模型: {data['model']}, 预算 {data.get('budget', 0):,} tokens, 最多调用 {data['max_turns']} 次")
             print(f"prompt: {data['prompts']['system']}, {data['prompts']['task']}")
         elif event == "llm_response":
             print(f"\n[第 {data['turn']} 轮] 输入 {data['input_tokens']} (缓存命中 {data['cache_read_tokens']}) "
@@ -51,6 +51,12 @@ class ProgressPrinter:
             print(f"  [护栏 {data['guard']}] {_preview(data['message'])}")
         elif event == "guard_error":
             print(f"  [护栏 {data['guard']} 出错, 已停用] {data['error']}")
+        elif event == "budget":
+            # 每一轮都有这个事件, 只在有提醒的时候打印
+            if data.get("notice"):
+                print(f"\n[预算] 已用 {data['used']:,} / {data['budget']:,} tokens ({data['phase']}): {_preview(data['notice'])}")
+        elif event == "final_tool_calls_ignored":
+            print(f"  [最后一轮] 模型仍然调用了 {data['count']} 个工具, 没有执行")
         elif event == "tool_result":
             # "返回"而不是"完成": 工具执行成功, 不代表命令成功了 (比如测试失败时退出码不为 0)
             mark = "失败" if data["is_error"] else "返回"

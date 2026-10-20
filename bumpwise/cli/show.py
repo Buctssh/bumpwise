@@ -80,7 +80,8 @@ def render_run(run_dir: Path, max_chars: int | None = 1500) -> str:
     out.append(f"运行 {meta.get('run_id')}    状态 {meta.get('status')}")
     out.append(f"开始 {meta.get('started_at')}    结束 {meta.get('finished_at', '-')}")
     out.append(f"任务 {task.get('package')} -> {task.get('target')}    仓库 {task.get('repo')}")
-    out.append(f"模型 {settings.get('provider')} / {settings.get('model')}    最多 {settings.get('max_turns')} 轮")
+    out.append(f"模型 {settings.get('provider')} / {settings.get('model')}    最多 {settings.get('max_turns')} 轮"
+               + (f"    预算 {meta['budget']['tokens']:,} tokens ({meta['budget']['source']})" if "budget" in meta else ""))
     out.append("prompt " + ", ".join(f"{p.get('name')} {p.get('sha256', '')[:12]}" for p in prompts.values()))
     harness = meta.get("harness", {})
     out.append(f"harness {harness.get('commit', '')[:12]}" + (" (有未提交的改动)" if harness.get("dirty") else ""))
@@ -126,6 +127,12 @@ def render_run(run_dir: Path, max_chars: int | None = 1500) -> str:
                 out.append(f"  [护栏 {data.get('guard')}] {_clip(data.get('message', ''), max_chars)}")
         elif kind == "guard_error":
             out.append(f"  [护栏 {data.get('guard')} 出错, 已停用] {data.get('error')}")
+        elif kind == "budget":
+            if data.get("notice"):
+                out.append(f"  [预算 {data.get('phase')}, 已用 {data.get('used', 0):,} / {data.get('budget', 0):,}] "
+                           f"{_clip(data['notice'], max_chars)}")
+        elif kind == "final_tool_calls_ignored":
+            out.append(f"  [最后一轮] 模型仍然调用了 {data.get('count')} 个工具, 没有执行")
         elif kind == "stop":
             out.append("")
             out.append(f"停止: {data.get('status')}" + (f" ({data['error']})" if data.get("error") else ""))

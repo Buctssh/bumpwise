@@ -38,13 +38,14 @@ DEFAULT_STATE ="目标依赖已经安装为新版本, 源代码还没有针对�
 # 退出码: 让脚本和流水线不用解析输出, 就能知道这次运行是怎么结束的.
 # 1 留给程序崩溃 (Python 未捕获异常的默认退出码), 2 留给参数错误 (argparse 的默认退出码),
 # 130 = 128 + SIGINT 的编号 2, 是 shell 里"被 Ctrl+C 中断"的惯例.
-# 20 是准备失败: 题目或环境有问题, agent 没有运行, 和 agent 没完成任务 (10-13) 分开
+# 20 是准备失败: 题目或环境有问题, agent 没有运行, 和 agent 没完成任务 (10-14) 分开
 EXIT_CODES = {
     Status.FINISHED.value: 0,
     Status.NEEDS_HUMAN.value: 10,
     Status.MAX_TURNS.value: 11,
     Status.MAX_TOKENS.value: 12,
     Status.LLM_ERROR.value: 13,
+    Status.BUDGET.value: 14,
     PREPARE_FAILED: 20,
     Status.INTERRUPTED.value: 130,
 }
@@ -56,7 +57,9 @@ def add_parser(commands: argparse._SubParsersAction) -> None:
     source = run.add_mutually_exclusive_group(required=True)
     source.add_argument("--task", type=Path, help="题目文件 (tasks/*.toml): 创建全新的工作区, 跑准备流水线, 再运行 agent")
     source.add_argument("--repo", type=Path, help="已经准备好的仓库: 不经过准备流水线, 直接运行 agent (调试用)")
-    run.add_argument("--max-turns", type=int, help="最多调用模型多少次 (默认使用配置中的值)")
+    run.add_argument("--max-turns", type=int, help="最多调用模型多少次, 只作为断路器 (默认使用配置中的值)")
+    run.add_argument("--token-budget", type=int,
+                     help="这次运行的 token 预算 (默认: 题目里的 [budget], 没有时用环境变量 BUMPWISE_TOKEN_BUDGET 或配置中的值)")
 
     task = run.add_argument_group("--task 的参数")
     task.add_argument("--base-python", help=BASE_PYTHON_HELP)
@@ -138,6 +141,10 @@ def _load_settings(args: argparse.Namespace) -> Settings:
     if args.max_turns is not None:
         # Settings 是不可变的 (frozen), 用 replace 生成一个修改了 max_turns 的新对象
         settings = dataclasses.replace(settings, max_turns=args.max_turns)
+    if args.token_budget is not None:
+        if args.token_budget <= 0:
+            raise SetupError(f"--token-budget 必须大于 0, 现在是 {args.token_budget}")
+        settings = dataclasses.replace(settings, token_budget=args.token_budget)
     return settings
 
 
