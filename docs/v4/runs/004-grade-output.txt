@@ -1,0 +1,27 @@
+
+评分: 先准备一个旧版本的环境, 用于对比接口表面
+  [评分/旧版本] python: 完成 (0.0s)
+  [评分/旧版本] venv: 完成 (6.2s)
+  [评分/旧版本] venv-check: 完成 (0.1s)
+  [评分/旧版本] install-1: 完成 (15.3s)
+  [评分/旧版本] pin-1.10.26: 完成 (0.6s)
+  [评分/旧版本] pin-1.10.26-check: 完成 (0.2s)
+  [评分/旧版本] baseline: 完成 (1.5s)
+  [评分] 运行 8 项检查
+  [评分] graded: fail
+
+评分: FAIL    pass 6, fail 1, warn 1    (评分于 2026-10-20T10:01:32+08:00, harness df42f02cef16 有未提交的改动)
+  pass  visible_tests       210 个测试全部通过 (0 个跳过)
+  pass  source_warnings     源代码没有产生废弃警告 (测试文件自己的警告不算)
+  pass  forbidden_patterns  源代码中没有 8 种旧写法
+  fail  hidden_tests        1 个隐藏测试意外地失败了
+        意外的失败 tests/test_models_v2.py::test_dotted_aliases_round_trip_without_data_loss: failed
+        已知的失败 tests/test_models_v2.py::test_aliases_accept_python_and_wire_names[GetCasesResponseItem]
+        已知的失败 tests/test_models_v2.py::test_aliases_accept_python_and_wire_names[GetIssuesResponseItem]
+        已知的失败 tests/test_models_v2.py::test_unknown_fields_preserved_at_every_response_level
+  warn  api_surface         2 处接口变化需要人看一下
+        [warning] cortex_xdr_client.api.models.action_status.ActionStatuStr: 少了字段 ['__root__']
+        [warning] cortex_xdr_client.api.models.action_status.ActionStatuStr: 基类从 ['pydantic.main.BaseModel'] 变成了 ['pydantic.root_model.RootModel[Dict[Union[str, NoneType], Union[str, NoneType]]]']
+  pass  dependency          装的是 pydantic 2.14.1, 依赖声明没有被改动
+  pass  change_scope        改动了 16 个文件, 都在源代码目录里
+  pass  isolation           agent 没有访问不该访问的 3 个路径
