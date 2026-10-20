@@ -61,6 +61,7 @@ class Settings:
     llm_timeout: float = 300.0                  # 调用模型一次的超时时间，单位秒
     runs_dir: Path = PROJECT_ROOT / "runs"     # 每次运行的记录保存在这里
     workspace_dir: Path = PROJECT_ROOT / "workspace"   # 本地镜像和每次运行的工作区 (见 task/workspace.py)
+    evals_dir: Path = PROJECT_ROOT / "evals"            # 评测的输出: 每次实验的清单和报告 (见 evaluation/batch.py)
 
     @classmethod
     def from_env(cls) -> Settings:

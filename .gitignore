@@ -26,8 +26,8 @@ workspace/
 # agent 的执行轨迹、日志
 /runs/
 *.log
-# 评测结果（评测任务定义本身要提交，不要忽略 eval/ 整个目录）
-eval/results/
+# 评测的输出 (清单, 报告). 实验的定义在 experiments/, 要提交
+/evals/
 # 本地状态数据库（V7 之后会用到）
 *.db
 *.sqlite

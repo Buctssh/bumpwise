@@ -23,7 +23,7 @@ ALLOWED: dict[str, set[str]] = {
     "task": {"config", "env", "harness"},                                # 题目, 工作区, 准备流水线 (不知道模型的存在)
     "grading": {"config", "env", "harness", "task"},                     # 评分 (不需要模型)
     "runner": {"config", "env", "llm", "tools", "harness", "task", "grading"},     # 编排一次运行 (不知道命令行的存在)
-    "evaluation": {"config", "env", "tools", "harness", "task", "grading", "runner"},  # 评测: 批量运行, 统计, 报告 (V6)
+    "evaluation": {"config", "env", "llm", "tools", "harness", "task", "grading", "runner"},  # 评测: 批量运行, 统计, 报告 (V6)
     "cli": {"config", "env", "llm", "tools", "harness", "task", "grading", "runner", "evaluation"},  # 命令行, 最上层
     "__main__": {"cli"},
 }

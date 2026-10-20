@@ -5,9 +5,10 @@
 """
 from __future__ import annotations
 
+from .batch import BatchError, BatchResult, Entry, load_entries, new_experiment_dir, run_experiment
 from .records import RunRecord, load_record
 from .spec import ArmSpec, ExperimentError, ExperimentSpec, PlannedRun, load_experiment
 from .stats import Difference, Proportion, Summary, compare, outcome, pass_at_k, pass_rate, summarize, wilson
 
-__all__ = ["ArmSpec", "ExperimentError", "ExperimentSpec", "PlannedRun", "load_experiment", "Difference", "Proportion", "RunRecord", "Summary", "compare", "load_record", "outcome", "pass_at_k",
+__all__ = ["BatchError", "BatchResult", "Entry", "load_entries", "new_experiment_dir", "run_experiment", "ArmSpec", "ExperimentError", "ExperimentSpec", "PlannedRun", "load_experiment", "Difference", "Proportion", "RunRecord", "Summary", "compare", "load_record", "outcome", "pass_at_k",
            "pass_rate", "summarize", "wilson"]
