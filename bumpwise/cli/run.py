@@ -1,5 +1,5 @@
 """run 命令: 运行一次依赖迁移. 两种方式:
-    python -m bumpwise run --task tasks/xxx.toml                         照着题目运行 (创建工作区, 准备, 运行 agent)
+    python -m bumpwise run --task tasks/xxx.toml                         照着题目运行 (创建工作区, 准备, 运行 agent, 评分)
     python -m bumpwise run --repo ... --package ... --target ...         在已经准备好的仓库上直接运行 agent (调试用)
 
 这里只负责和人打交道: 解析参数, 读取配置, 创建模型客户端, 在终端上显示进度, 决定退出码.
@@ -16,6 +16,7 @@ from pathlib import Path
 from ..config import Settings
 from ..env import LocalEnvironment
 from ..harness.loop import Status, best_effort
+from ..harness.trace import load_meta
 from ..llm import create_llm_client
 from ..runner import PREPARE_FAILED, AgentTask, RunOutcome, RunnerError, run_repo, run_task
 from ..runner.record import GIT_STATUS, git
@@ -23,13 +24,16 @@ from ..task import TaskError, load_task
 from ..task.workspace import LocalWorkspaceProvider
 from .errors import SetupError
 from .progress import ProgressPrinter
+from .show import load_grade, render_grade
 
 LOCAL_ENV_WARNING = (
     "注意: 当前使用本地环境, agent 执行的命令拥有你的全部权限, 并且不受路径限制.\n"
     "只在可信的仓库上运行, 运行时请在旁边观察, 发现不对随时按 Ctrl+C 停止."
 )
 
-DEFAULT_STATE = "目标依赖已经安装为新版本, 源代码还没有针对新版本做任何修改."
+BASE_PYTHON_HELP = "用来创建虚拟环境的 Python (默认: 环境变量 BUMPWISE_PYTHON, 没有设置时用运行 bumpwise 的这个 Python)"
+
+DEFAULT_STATE ="目标依赖已经安装为新版本, 源代码还没有针对新版本做任何修改."
 
 # 退出码: 让脚本和流水线不用解析输出, 就能知道这次运行是怎么结束的.
 # 1 留给程序崩溃 (Python 未捕获异常的默认退出码), 2 留给参数错误 (argparse 的默认退出码),
@@ -55,7 +59,8 @@ def add_parser(commands: argparse._SubParsersAction) -> None:
     run.add_argument("--max-turns", type=int, help="最多调用模型多少次 (默认使用配置中的值)")
 
     task = run.add_argument_group("--task 的参数")
-    task.add_argument("--base-python", help="用来创建虚拟环境的 Python (默认: 环境变量 BUMPWISE_PYTHON, 没有设置时用运行 bumpwise 的这个 Python)")
+    task.add_argument("--base-python", help=BASE_PYTHON_HELP)
+    task.add_argument("--no-grade", action="store_true", help="agent 结束后不评分 (省掉准备旧版本环境的时间), 之后可以用 grade 命令补上")
 
     repo = run.add_argument_group("--repo 的参数")
     repo.add_argument("--package", help="要迁移的依赖, 例如 pydantic (--repo 时必填)")
@@ -86,15 +91,20 @@ def _run_task(args: argparse.Namespace, settings: Settings, observers) -> RunOut
         task = load_task(args.task)
     except TaskError as e:
         raise SetupError(str(e)) from None
-    base_python = args.base_python or os.environ.get("BUMPWISE_PYTHON") or sys.executable
     return run_task(
         task,
         settings=settings,
         llm=create_llm_client(settings),
         provider=LocalWorkspaceProvider(settings.workspace_dir),
-        base_python=base_python,
+        base_python=default_base_python(args.base_python),
         observers=observers,
+        grade=not args.no_grade,
     )
+
+
+def default_base_python(arg: str | None) -> str:
+    """run 和 grade 命令共用: 准备工作区和准备旧版本的环境, 要用同一个 Python"""
+    return arg or os.environ.get("BUMPWISE_PYTHON") or sys.executable
 
 
 def _run_repo(args: argparse.Namespace, settings: Settings, observers) -> RunOutcome:
@@ -150,4 +160,8 @@ def _print_summary(outcome: RunOutcome) -> None:
         if result.final_text.strip():
             print("\n最终回复:")
             print(result.final_text.strip())
+    if outcome.grade is not None:
+        # 和 show 命令显示的完全一样: 都从运行目录里读, 不用内存里的对象
+        print()
+        print("\n".join(render_grade(load_meta(outcome.trace_dir)["grade"], load_grade(outcome.trace_dir))))
     print(f"\n运行记录: {outcome.trace_dir}\n查看: python -m bumpwise show {outcome.trace_dir}")

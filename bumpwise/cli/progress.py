@@ -24,7 +24,16 @@ class ProgressPrinter:
         if event == "run_start":
             print(f"\n运行记录: {data['trace_dir']}")
         elif event == "prepare":
-            self._prepare(data)
+            self._prepare(data, "准备")
+        elif event == "grade_start":
+            print("\n评分: 先准备一个旧版本的环境, 用于对比接口表面")
+        elif event == "grade_prepare":
+            self._prepare(data, "评分/旧版本")
+        elif event == "grade_checks":
+            print("  [评分] 运行 8 项检查")
+        elif event == "grade_end":
+            print(f"  [评分] {data['status']}" + (f": {data['verdict']}" if "verdict" in data else "")
+                  + (f" ({data['error']})" if data.get("error") else ""))
         elif event == "agent_start":
             print(f"\n仓库: {data['workdir']} (HEAD {data['head'][:12]})")
             print(f"模型: {data['model']}, 最多调用 {data['max_turns']} 次")
@@ -46,15 +55,16 @@ class ProgressPrinter:
         sys.stdout.flush()
 
     @staticmethod
-    def _prepare(data: dict[str, Any]) -> None:
-        # 准备阶段每一步一行. 完整的命令输出在 trace 里, 这里只显示结果和耗时
+    def _prepare(data: dict[str, Any], label: str) -> None:
+        # 准备阶段每一步一行. 完整的命令输出在 trace 里, 这里只显示结果和耗时.
+        # 评分时准备旧版本的环境也是同样的步骤, 用 label 区分
         step = data["step"]
         if "exit_code" in data:
             ok = data["exit_code"] == 0 and not data.get("timed_out")
-            print(f"  [准备] {step}: {'完成' if ok else '退出码 ' + str(data['exit_code'])} ({data['duration_s']:.1f}s)")
+            print(f"  [{label}] {step}: {'完成' if ok else '退出码 ' + str(data['exit_code'])} ({data['duration_s']:.1f}s)")
         elif step == "edit":
-            print(f"  [准备] 修改 {data['file']}: {data['old']} -> {data['new']}")
+            print(f"  [{label}] 修改 {data['file']}: {data['old']} -> {data['new']}")
         elif step == "freeze":
-            print(f"  [准备] 冻结: 排除 {len(data['excluded'])} 个准备阶段产生的文件")
+            print(f"  [{label}] 冻结: 排除 {len(data['excluded'])} 个准备阶段产生的文件")
         else:
-            print(f"  [准备] {step}")
+            print(f"  [{label}] {step}")

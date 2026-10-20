@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..harness.trace import load_events, load_meta
+from ..runner.grade import GRADE_FILE
 from .errors import SetupError
 
 
@@ -137,4 +138,43 @@ def render_run(run_dir: Path, max_chars: int | None = 1500) -> str:
         out.append("工具: " + ", ".join(f"{name} {count}" for name, count in tools.most_common()))
     if meta.get("status") == "crashed":
         out.append("\nharness 出错:\n" + meta.get("error", ""))
+    if "grade" in meta:
+        out.append("")
+        out.extend(render_grade(meta["grade"], load_grade(run_dir), max_chars))
     return "\n".join(out) + "\n"
+
+
+# ============================================================================ 评分
+
+
+def load_grade(run_dir: Path) -> dict[str, Any] | None:
+    """读取评分报告 (grade.json). 没有评过分, 或者评分没有完成时为 None"""
+    path = Path(run_dir) / GRADE_FILE
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+def render_grade(grade_meta: dict[str, Any], report: dict[str, Any] | None, max_chars: int | None = 1500) -> list[str]:
+    """评分的结论: 每项检查一行, 没有通过的项目再列出细节. run 的总结, show 和 grade 命令共用"""
+    status = grade_meta.get("status")
+    if report is None:
+        # 没有完成的评分: 跳过, 出错, 被打断. 说明原因, 以及怎样重新评分
+        lines = [f"评分: {status}" + (f" ({grade_meta['error']})" if grade_meta.get("error") else "")]
+        if status != "skipped":
+            lines.append("重新评分: python -m bumpwise grade <运行目录>")
+        return lines
+
+    counts = report.get("counts", {})
+    harness = grade_meta.get("harness", {})
+    lines = [f"评分: {report['verdict'].upper()}    "
+             + ", ".join(f"{k} {v}" for k, v in counts.items() if v)
+             + f"    (评分于 {grade_meta.get('graded_at', '-')}, harness {harness.get('commit', '')[:12]}"
+             + (" 有未提交的改动)" if harness.get("dirty") else ")")]
+    width = max(len(c["name"]) for c in report["checks"])
+    for check in report["checks"]:
+        # 状态用文字而不是符号: 中文 Windows 的终端 (GBK) 显示不了对勾这类字符
+        lines.append(f"  {check['status']:<4}  {check['name']:<{width}}  {check['summary']}")
+        # 通过和跳过的项目不展开细节: 要看的是哪里有问题
+        if check["status"] in ("fail", "warn") and check["details"]:
+            lines.append(_indent(_clip("\n".join(check["details"]), max_chars), "        "))
+    return lines
+
