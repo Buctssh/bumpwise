@@ -18,18 +18,22 @@ from __future__ import annotations
 import copy
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 from ..llm import LLMClient, LLMResponse
 from ..tools import ToolContext, ToolRegistry, ToolResult
+from .guards import CallOutcome, Guard, ToolCall
 from .policy import Action, Decision, Policy
 
 
 # 和 prompts/system_v1.md 的约定一致: 需要人处理时, 最终回复的第一行写这几个字
 NEEDS_HUMAN_MARK = "需要人工处理"
+
+# 护栏说的话都带上这个前缀: 仓库的内容和命令输出是数据, 护栏的提醒来自 harness 本身, 两者要能区分开
+GUARD_PREFIX = "[harness 护栏]"
 
 # 连续多少次被截断就放弃: 模型一直写不完, 再试下去只是浪费 token
 MAX_CONSECUTIVE_TRUNCATIONS = 3
@@ -67,6 +71,8 @@ class RunResult:
     cache_write_tokens: int         # 输入中写入缓存的部分
     messages: list[dict[str, Any]]  # 完整的对话历史, 用于排查问题, V2 会写进 trace
     error: str = ""                 # 非正常停止时的说明
+    blocked_calls: int = 0          # 被护栏拦下的次数 (和被权限策略拒绝的分开统计)
+    guard_notices: int = 0          # 护栏提醒的次数 (before_turn 和 after_call)
 
 
 # 事件回调: 循环在关键的时间点调用它,参数是事件名和事件内容
@@ -127,6 +133,8 @@ class _Run:
     turns: int = 0
     tool_calls: int = 0
     denied_calls: int = 0
+    blocked_calls: int = 0          # 被护栏拦下的次数 (和被权限策略拒绝的分开统计)
+    guard_notices: int = 0          # 护栏提醒的次数 (before_turn 和 after_call)
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
@@ -144,7 +152,8 @@ class AgentLoop:
         policy: Policy,
         ctx: ToolContext,
         max_turns: int,
-        on_event: EventHandler | None = None
+        on_event: EventHandler | None = None,
+        guards: Sequence[Guard] = (),
     ) -> None:
         if max_turns < 1:
             raise ValueError(f"max_turns 至少为1, 现在是 {max_turns}")
@@ -154,6 +163,7 @@ class AgentLoop:
         self._ctx = ctx
         self._max_turns = max_turns
         self._on_event = on_event
+        self._guards = list(guards)  # 转成 list: 出错的护栏要从里面去掉, 不能修改调用方传进来的序列
 
     def run(self, system: str, task: str) -> RunResult:
         """运行一次任务, 无论怎样停止, 都返回 RunResult, 不会把模型调用的异常抛出"""
@@ -176,6 +186,8 @@ class AgentLoop:
             cache_write_tokens=run.cache_write_tokens,
             messages=run.messages,
             error=error,
+            blocked_calls=run.blocked_calls,
+            guard_notices=run.guard_notices,
         )
         self._emit("stop", {"status": status.value, "error": error, "turns": run.turns})
         return result
@@ -187,6 +199,9 @@ class AgentLoop:
 
         while run.turns < self._max_turns:
             run.turns += 1
+            # 调用模型之前, 让护栏说一句话 (比如"还剩 5 轮"), 追加在最后一条 user 消息里, 和工具结果一起发出去
+            for notice in self._ask_guards("before_turn", run, run.turns, self._max_turns):
+                _append_notice(run.messages, notice)
             started = time.monotonic()
             try:
                 response = self._llm.create(system, tools, run.messages)
@@ -242,7 +257,7 @@ class AgentLoop:
         return Status.MAX_TURNS, f"调用模型的次数达到了上限 ({self._max_turns} 次)"
 
     def _call_tool(self, call: dict[str, Any], run: _Run) -> dict[str, Any]:
-        """执行一次工具调用(先经过权限策略), 返回发给模型的 tool_result 块"""
+        """执行一次工具调用: 权限策略 → 护栏 (before_call) → 执行 → 护栏 (after_call), 返回发给模型的 tool_result 块"""
         run.tool_calls += 1
         name = call.get("name", "")
         args = call.get("input")
@@ -250,22 +265,37 @@ class AgentLoop:
         if not isinstance(args, dict):
             args = {}
 
+        # 安全检查永远排第一: 被策略拒绝的调用不会交给护栏
         decision = self._policy.check(name, args)
+        # 护栏拿到的是参数的深拷贝: 护栏改了它, 也不会影响真正执行的调用 (见 guards/base.py)
+        tool_call = ToolCall(run.turns, name, copy.deepcopy(args))
+        # 只取第一个拦下的护栏, 后面的不用再问
+        blocked = next(iter(self._ask_guards("before_call", run, tool_call)), None) if decision.allowed else None
         self._emit("tool_call", {
             "turn": run.turns,
             "id": call.get("id"),
             "name": name,
             "input": args,
             "decision": decision.action.value,
-            "rule": decision.rule
+            "rule": decision.rule,
+            # 统计时要分清"被策略拒绝"和"被护栏拦下", 两者的含义完全不同
+            "blocked": blocked is not None,
         })
 
         started = time.monotonic()
-        if decision.allowed:
-            result = self._registry.execute(name, args, self._ctx)
-        else:
+        if not decision.allowed:
             run.denied_calls += 1
             result = _denied_result(decision)
+        elif blocked is not None:
+            run.blocked_calls += 1
+            result = ToolResult(blocked, is_error=True)
+        else:
+            result = self._registry.execute(name, args, self._ctx)
+            notices = self._ask_guards("after_call", run, CallOutcome(tool_call, result.content, result.is_error))
+            if notices:
+                run.guard_notices += len(notices)
+                # 追加在工具结果的后面: 提醒和它说的那次调用放在一起, 模型才知道说的是哪一次
+                result = ToolResult(result.content + "\n\n" + "\n".join(notices), result.is_error)
 
         self._emit("tool_result", {
             "turn": run.turns,
@@ -281,6 +311,28 @@ class AgentLoop:
             "content": result.content,
             "is_error": result.is_error
         }
+
+    def _ask_guards(self, hook: str, run: _Run, *args: Any) -> list[str]:
+        """依次调用每个护栏的某个钩子, 返回它们说的话 (已经加上前缀). 每句话都作为 guard 事件写进 trace"""
+        messages = []
+        # 遍历一份拷贝: 出错的护栏要从 self._guards 里删掉, 一边遍历一边删会跳过元素
+        for guard in list(self._guards):
+            try:
+                text = getattr(guard, hook)(*args)
+            except Exception as e:
+                # fail-open: 护栏只负责提醒, 它有 bug 不能让运行崩溃. 去掉它, 之后不再调用, 并记进 trace.
+                # 对比权限策略: 策略出错会直接抛出, 因为安全检查失效时继续运行是危险的
+                self._guards.remove(guard)
+                self._emit("guard_error", {"turn": run.turns, "guard": guard.name, "hook": hook,
+                                           "error": f"{type(e).__name__}: {e}"})
+                continue
+            if text:
+                messages.append(f"{GUARD_PREFIX} {text}")
+                self._emit("guard", {"turn": run.turns, "guard": guard.name, "hook": hook, "message": text})
+        # after_call 的提醒由 _call_tool 计数 (只有真正追加进结果的才算), 这里只数 before_turn 的
+        if hook == "before_turn":
+            run.guard_notices += len(messages)
+        return messages
 
     def _emit(self, event: str, data: dict[str, Any]) -> None:
         if self._on_event is not None:
@@ -313,3 +365,14 @@ def _needs_human(text: str) -> bool:
         if line.strip():
             return NEEDS_HUMAN_MARK in line
     return False
+
+
+def _append_notice(messages: list[dict[str, Any]], text: str) -> None:
+    """把一句提醒追加到最后一条 user 消息里"""
+    # 调用模型之前, 最后一条一定是 user 消息: 第一条任务消息 (字符串), 或者工具结果 (列表, 可以在后面放 text 块).
+    # 不能另起一条 user 消息: 接口要求 user 和 assistant 交替出现
+    last = messages[-1]
+    if isinstance(last["content"], str):
+        last["content"] = f"{last['content']}\n\n{text}"
+    else:
+        last["content"].append({"type": "text", "text": text})
