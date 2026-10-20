@@ -10,7 +10,7 @@ import bumpwise.runner.run as runner_run
 from bumpwise.config import Settings
 from bumpwise.env import LocalEnvironment
 from bumpwise.llm import LLMResponse
-from bumpwise.runner import CRASHED, INTERRUPTED, PREPARE_FAILED, AgentTask, RunnerError, run_repo, run_task
+from bumpwise.runner import CRASHED, INTERRUPTED, PREPARE_FAILED, AgentConfig, AgentTask, RunnerError, run_repo, run_task
 from bumpwise.task import TaskSpec
 from bumpwise.task.spec import BudgetSpec
 from bumpwise.task.prepare import PrepareError, PreparedTask, TestOutcome
@@ -258,3 +258,28 @@ def test_default_budget_comes_from_settings(settings, remote, monkeypatch):
     monkeypatch.setattr(runner_run, "prepare", fake_prepare)
     outcome = run(settings, make_task(remote), FakeLLM(reply("完成")))
     assert load_meta(outcome)["budget"] == {"tokens": settings.token_budget, "source": "default"}
+
+
+# ---------------------------------------------------------------- 对照组 (V6)
+
+def test_agent_config_controls_prompt_guards_budget_and_turns(settings, remote, monkeypatch):
+    monkeypatch.setattr(runner_run, "prepare", fake_prepare)
+    task = make_task(remote).model_copy(update={"budget": BudgetSpec(tokens=123_456)})
+    agent = AgentConfig(name="no-guards", system_prompt="system_v2", guards=(), token_budget=500_000, max_turns=7)
+    outcome = run(settings, task, FakeLLM(reply("完成")), agent=agent)
+    meta = load_meta(outcome)
+    assert meta["agent"] == {"name": "no-guards", "system_prompt": "system_v2", "guards": [],
+                             "token_budget": 500_000, "max_turns": 7}
+    assert meta["prompts"]["system"]["name"] == "system_v2"
+    assert meta["guards"] == []
+    assert meta["budget"] == {"tokens": 500_000, "source": "agent"}     # 对照组的预算优先于题目的
+    assert meta["max_turns"] == 7
+
+
+def test_default_agent_config_is_the_standard_setup(settings, remote, monkeypatch):
+    monkeypatch.setattr(runner_run, "prepare", fake_prepare)
+    meta = load_meta(run(settings, make_task(remote), FakeLLM(reply("完成"))))
+    assert meta["agent"]["name"] == "default"
+    assert meta["prompts"]["system"]["name"] == "system_v3"
+    assert meta["guards"] == ["pipe_exit_code", "repeat", "test_cadence"]
+    assert meta["max_turns"] == settings.max_turns

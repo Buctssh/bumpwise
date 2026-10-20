@@ -9,7 +9,7 @@ from bumpwise.evaluation.stats import (
     FAIL, INVALID, PASS, UNGRADED, compare, mean_pass_at_k, outcome, pass_at_k, pass_rate, summarize, wilson,
 )
 
-BASE = RunRecord(run_id="r", task_id="t", status="finished", verdict="pass", checks={}, reported=True, green_turn=10,
+BASE = RunRecord(run_id="r", task_id="t", arm="default", status="finished", verdict="pass", checks={}, reported=True, green_turn=10,
                  test_runs=3, turns=20, tokens=1000, budget=None, guard_notices=0, blocked_calls=0, handoff=None,
                  harness="abc", prompt="system_v3", duration_s=1.0)
 
