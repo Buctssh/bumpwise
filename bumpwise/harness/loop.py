@@ -30,7 +30,8 @@ from .guards import CallOutcome, Guard, ToolCall
 from .policy import Action, Decision, Policy
 
 
-# 和 prompts/system_v1.md 的约定一致: 需要人处理时, 最终回复的第一行写这几个字
+# 和 prompts/system_v1.md, system_v2.md 的约定一致: 需要人处理时, 最终回复的第一行写这几个字.
+# system_v3 改用 escalate 工具 (控制信号), 这个文字标记保留, 用于兼容旧的 prompt
 NEEDS_HUMAN_MARK = "需要人工处理"
 
 # 护栏说的话都带上这个前缀: 仓库的内容和命令输出是数据, 护栏的提醒来自 harness 本身, 两者要能区分开
