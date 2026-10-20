@@ -83,10 +83,12 @@ def build_system_prompt(
     rules: Iterable[str],
     scratch_dir: str,
     prompts_dir: Path = PROMPTS_DIR,
+    name: str = SYSTEM_PROMPT,
 ) -> RenderedPrompt:
-    """渲染 system prompt: 填入环境信息, 临时目录和权限规则"""
+    """渲染 system prompt: 填入环境信息, 临时目录和权限规则. name 是模板的名字, 评测的对照组可以换成别的版本.
+    模板要用同一组变量: system_v1 少了 shell_notes 和 scratch_dir, 用它会报 PromptError (v2, v3 可以)"""
     return render(
-        SYSTEM_PROMPT,
+        name,
         {
             "os_name": env_info.os_name,
             "shell": env_info.shell,
