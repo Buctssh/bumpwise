@@ -39,6 +39,9 @@ class ToolResult:
 
     content: str
     is_error: bool = False
+    # 控制信号: 不是给模型看的数据, 而是给 harness 的指令. 现在只有一种: 交给人 (escalate).
+    # loop 读这个字段决定停下, 而不是解析 content 里的文字: 文字的格式稍有变化, 解析就会悄悄失效
+    handoff: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -48,7 +51,7 @@ class Tool:
     name: str
     description: str
     params: type[BaseModel]
-    handler: Callable[[Any, ToolContext], str]
+    handler: Callable[[Any, ToolContext], "str | ToolResult"]
 
     def schema(self) -> dict:
         """生成发给模型的工具定义"""
@@ -95,7 +98,9 @@ class ToolRegistry:
             return ToolResult(f"参数不合法: \n{e}", is_error=True)
 
         try:
-            return ToolResult(tool.handler(args, ctx))
+            output = tool.handler(args, ctx)
+            # 大多数工具只返回文字, 由这里包装; 需要带控制信号的工具 (escalate) 直接返回 ToolResult
+            return output if isinstance(output, ToolResult) else ToolResult(output)
         except ToolError as e:
             return ToolResult(str(e), is_error=True)
         except Exception as e:
