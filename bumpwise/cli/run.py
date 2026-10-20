@@ -138,10 +138,11 @@ def _load_settings(args: argparse.Namespace) -> Settings:
     except RuntimeError as e:
         # 缺少密钥, 服务商写错等. 只在这一处把 RuntimeError 转成给使用者看的提示, 不在 main 里笼统地捕获
         raise SetupError(str(e)) from None
-    if args.max_turns is not None:
+    # 用 getattr: 不是每个子命令都有这两个参数 (比如 eval run 的配置来自实验文件)
+    if getattr(args, "max_turns", None) is not None:
         # Settings 是不可变的 (frozen), 用 replace 生成一个修改了 max_turns 的新对象
         settings = dataclasses.replace(settings, max_turns=args.max_turns)
-    if args.token_budget is not None:
+    if getattr(args, "token_budget", None) is not None:
         if args.token_budget <= 0:
             raise SetupError(f"--token-budget 必须大于 0, 现在是 {args.token_budget}")
         settings = dataclasses.replace(settings, token_budget=args.token_budget)
