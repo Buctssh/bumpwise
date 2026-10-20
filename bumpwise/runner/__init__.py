@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from .grade import GRADE_ERROR, GRADE_INTERRUPTED, GRADE_SKIPPED, GRADED, GradeOutcome, private_paths, regrade
 from .record import CRASHED, INTERRUPTED, PREPARE_FAILED, RUNNING, RunnerError
-from .run import AgentConfig, AgentTask, RunOutcome, run_repo, run_task
+from .run import GRADED_STATUSES, AgentConfig, AgentTask, RunOutcome, run_repo, run_task
 
 __all__ = [
     "CRASHED", "GRADED", "GRADE_ERROR", "GRADE_INTERRUPTED", "GRADE_SKIPPED", "INTERRUPTED", "PREPARE_FAILED", "RUNNING",
-    "AgentConfig", "AgentTask", "GradeOutcome", "RunOutcome", "RunnerError", "private_paths", "regrade", "run_repo", "run_task",
+    "GRADED_STATUSES", "AgentConfig", "AgentTask", "GradeOutcome", "RunOutcome", "RunnerError", "private_paths", "regrade", "run_repo", "run_task",
 ]

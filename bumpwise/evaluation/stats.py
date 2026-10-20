@@ -7,7 +7,8 @@
 一次运行的结果分四种 (outcome):
     pass      评分通过
     fail      评分不通过 (包括 agent 没完成就停下了, 只要评了分, 就按评分算)
-    invalid   不算 agent 的成绩: 准备失败 (题目或环境的问题), harness 崩溃, 被人打断. 不计入分母, 单独报告数量
+    invalid   不算 agent 的成绩: 准备失败 (题目或环境的问题), harness 崩溃, 调用模型失败 (服务商或网络的问题), 被人打断.
+              不计入分母, 单独报告数量, 批量运行会重试
     ungraded  agent 运行了, 但没有评分. 批量运行会给每一次有效的运行评分, 正常情况下不应该出现; 出现了也不计入分母, 单独报告
 """
 from __future__ import annotations
@@ -21,8 +22,9 @@ from .records import RunRecord
 
 PASS, FAIL, INVALID, UNGRADED = "pass", "fail", "invalid", "ungraded"
 
-# 不算 agent 的成绩的停止方式 (ADR-015): 准备失败是题目或环境的问题, 崩溃是 harness 的 bug, 被打断是人的操作
-_INVALID_STATUSES = {"prepare_failed", "crashed", "interrupted", "running"}
+# 不算 agent 的成绩的停止方式 (ADR-015): 准备失败是题目或环境的问题, 崩溃是 harness 的 bug,
+# 调用模型失败是服务商或网络的问题 (余额不足, 超时), 被打断是人的操作, running 是进程被强制终止了
+INVALID_STATUSES = frozenset({"prepare_failed", "crashed", "llm_error", "interrupted", "running"})
 
 # 95% 置信区间对应的 z 值
 Z_95 = 1.959964
@@ -30,7 +32,7 @@ Z_95 = 1.959964
 
 def outcome(record: RunRecord) -> str:
     """一次运行的结果: pass, fail, invalid, ungraded"""
-    if record.status in _INVALID_STATUSES:
+    if record.status in INVALID_STATUSES:
         return INVALID
     if record.verdict is None:
         return UNGRADED

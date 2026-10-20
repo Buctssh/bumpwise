@@ -28,6 +28,7 @@ def record(**changes) -> RunRecord:
     ({"status": "prepare_failed", "verdict": None}, INVALID),  # 题目或环境的问题, 不算 agent 的成绩
     ({"status": "crashed", "verdict": "fail"}, INVALID),       # harness 的 bug, 要重跑
     ({"status": "interrupted"}, INVALID),
+    ({"status": "llm_error", "verdict": None}, INVALID),       # 服务商或网络的问题, 不是 agent 的成绩
     ({"status": "max_turns", "verdict": None}, UNGRADED),      # agent 运行了, 但没有评分: 不能当成 fail
 ])
 def test_outcome(changes, expected):

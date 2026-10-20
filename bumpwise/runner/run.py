@@ -39,6 +39,12 @@ from .grade import GradeOutcome, grade_run, private_paths
 SCRATCH_DIR = ".bumpwise"
 
 
+# 评测时要评分的停止方式: agent 自己做出了结束的决定, 或者用完了给它的资源. 都是 agent 的成绩.
+# 不包括调用模型失败 (llm_error) 和被打断 (interrupted): 那是服务商, 网络或者人的问题, 不是 agent 的成绩, 统计时算作无效
+GRADED_STATUSES = frozenset({Status.FINISHED.value, Status.BUDGET.value, Status.MAX_TURNS.value,
+                             Status.NEEDS_HUMAN.value, Status.MAX_TOKENS.value})
+
+
 @dataclass(frozen=True)
 class AgentTask:
     """交给 agent 的任务, 也就是写进任务消息的内容"""
@@ -95,9 +101,11 @@ def run_task(
     observers: Sequence[EventHandler] = (),
     grade: bool = True,
     agent: AgentConfig = AgentConfig(),
+    grade_unfinished: bool = False,
 ) -> RunOutcome:
     """照着题目运行一次: 创建工作区 → 准备 → agent 循环 → 运行记录 → 评分.
-    grade=False 时不评分 (调试时省掉准备旧版本的时间), 之后可以用 grade 命令补上"""
+    grade=False 时不评分 (调试时省掉准备旧版本的时间), 之后可以用 grade 命令补上.
+    grade_unfinished=True 时, 没做完就停下的运行也评分 (评测用, 见 GRADED_STATUSES)"""
     run_id = new_run_id(task.id)
     # 先创建 trace, 再做别的: 准备阶段的每一步也要记下来. 密钥交给 trace 用于脱敏
     trace = TraceWriter(settings.runs_dir, run_id, secrets=[settings.api_key])
@@ -141,9 +149,12 @@ def run_task(
         agent_task = AgentTask(m.package, m.target, prepared.state, m.test_command, m.notes,
                                budget=task.budget.tokens if task.budget is not None else None)
         outcome = _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event, agent)
-        # 只给正常结束的运行评分: 其他情况 (达到轮数上限, 交给人, 调用模型失败) 工作区停在不确定的状态, 评分没有意义.
+        # 平时只给正常结束的运行评分: 其他情况下工作区停在做到一半的状态, 人看评分的意义不大.
+        # 评测时 (grade_unfinished) 要给每一次 agent 真正运行过的结果评分: 没做完也是一种成绩, 不评分的话,
+        # 它们在统计里都会变成 ungraded, 通过率只算了"做完了的那些", 会被高估.
         # 评分在工作区关闭之前进行 (finally 里才关闭): 以后工作区是容器, 关闭就销毁了
-        if grade and outcome.status == Status.FINISHED.value:
+        gradable = GRADED_STATUSES if grade_unfinished else {Status.FINISHED.value}
+        if grade and outcome.status in gradable:
             result = grade_run(task, env, prepared.start_commit, trace, meta, provider=provider,
                                base_python=base_python, isolation_paths=private_paths(provider, settings.runs_dir),
                                on_event=fan_out(*observers))
