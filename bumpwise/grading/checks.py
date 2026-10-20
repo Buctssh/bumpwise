@@ -249,5 +249,5 @@ def check_isolation(events: list[dict[str, Any]] | None, forbidden_paths: Iterab
             hits.append(f"第 {data.get('turn')} 轮 {data.get('name')}: {text[:200]}")
     if hits:
         return CheckResult("isolation", FAIL, f"agent 有 {len(hits)} 次访问了不该访问的路径, 结果不可信", hits)
-    return CheckResult("isolation", PASS, "agent 没有访问镜像目录")
+    return CheckResult("isolation", PASS, f"agent 没有访问不该访问的 {len(needles)} 个路径", [f"检查的路径: {n}" for n in needles])
 

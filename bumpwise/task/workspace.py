@@ -57,6 +57,11 @@ class WorkspaceProvider(Protocol):
         grader 用它取出参考答案里的隐藏测试, 而工作区里没有参考答案的提交"""
         ...
 
+    def private_paths(self) -> list[str]:
+        """控制平面上 agent 不应该访问的路径 (比如镜像, 里面有完整的历史和参考答案). grader 检查 agent 有没有访问过它们.
+        工作区在容器里时, agent 根本访问不到本机, 返回空列表"""
+        ...
+
 
 def _git(*args: str, cwd: Path | None = None) -> str:
     """在本机上执行 git, 只用于创建工作区 (控制平面); 工作区里的 git 操作都要通过 env"""
@@ -110,6 +115,10 @@ class LocalWorkspaceProvider:
         data = _git_bytes("-c", "core.autocrlf=false", "archive", "--format=tar", commit, "--", *paths, cwd=mirror)
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
             return {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+
+    def private_paths(self) -> list[str]:
+        # 本地的工作区和镜像在同一台机器上, agent 的命令不受路径限制 (ADR-009), 能访问到镜像
+        return [str(self._mirrors.resolve())]
 
     # ------------------------------------------------------------------ 镜像
     
