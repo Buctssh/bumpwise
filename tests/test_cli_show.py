@@ -86,7 +86,8 @@ def test_context_includes_cached_tokens(run_dir):
 
 def test_summary(run_dir):
     out = render_run(run_dir)
-    assert "结果 finished, 调用模型 2 次, 工具调用 2 次 (被拒绝 1 次)" in out
+    # 旧的运行记录没有护栏的计数, 按 0 显示
+    assert "结果 finished, 调用模型 2 次, 工具调用 2 次 (被拒绝 1 次, 被护栏拦下 0 次), 护栏提醒 0 次" in out
     assert "耗时: 调用模型 3.5s, 执行工具 0.8s" in out
     assert "工具: run_command 1, edit_file 1" in out
 
@@ -133,3 +134,19 @@ def test_show_exits_quietly_when_the_pipe_is_closed(make_run):
     stderr = proc.stderr.read().decode("utf-8", errors="replace")
     assert proc.wait(timeout=60) == 0
     assert "Traceback" not in stderr
+
+
+def test_guard_events_are_shown(make_run):
+    run_dir = make_run([
+        ("guard", {"turn": 2, "guard": "budget", "hook": "before_turn", "message": "还剩 3 轮"}),
+        ("guard", {"turn": 2, "guard": "repeat", "hook": "before_call", "message": "第三次执行完全相同的调用"}),
+        ("tool_call", {"turn": 2, "id": "c1", "name": "run_command", "input": {"command": "ls"},
+                       "decision": "allow", "rule": "", "blocked": True}),
+        ("guard_error", {"turn": 3, "guard": "cadence", "hook": "after_call", "error": "KeyError: 'x'"}),
+    ], meta={**META, "result": {**META["result"], "blocked_calls": 1, "guard_notices": 1}})
+    text = render_run(run_dir)
+    assert "[护栏 budget] 还剩 3 轮" in text
+    assert "第三次执行完全相同的调用" not in text      # 拦下的原因在工具结果里, 不重复显示
+    assert "[被护栏拦下]" in text
+    assert "[护栏 cadence 出错, 已停用] KeyError: 'x'" in text
+    assert "被护栏拦下 1 次), 护栏提醒 1 次" in text
