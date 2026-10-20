@@ -1,0 +1,101 @@
+{
+ "verdict": "fail",
+ "counts": {
+  "pass": 6,
+  "fail": 1,
+  "warn": 1,
+  "skip": 0
+ },
+ "checks": [
+  {
+   "name": "visible_tests",
+   "status": "pass",
+   "summary": "210 个测试全部通过 (0 个跳过)",
+   "details": [],
+   "data": {
+    "passed": 210,
+    "failed": 0,
+    "error": 0,
+    "skipped": 0,
+    "collection_errors": 0
+   }
+  },
+  {
+   "name": "source_warnings",
+   "status": "pass",
+   "summary": "源代码没有产生废弃警告 (测试文件自己的警告不算)",
+   "details": [],
+   "data": {
+    "deprecations": 0,
+    "other_source_warnings": 0,
+    "all_warnings": 16
+   }
+  },
+  {
+   "name": "forbidden_patterns",
+   "status": "pass",
+   "summary": "源代码中没有 8 种旧写法",
+   "details": [],
+   "data": {}
+  },
+  {
+   "name": "hidden_tests",
+   "status": "fail",
+   "summary": "1 个隐藏测试意外地失败了",
+   "details": [
+    "意外的失败 tests/test_models_v2.py::test_dotted_aliases_round_trip_without_data_loss: failed",
+    "已知的失败 tests/test_models_v2.py::test_aliases_accept_python_and_wire_names[GetCasesResponseItem]",
+    "已知的失败 tests/test_models_v2.py::test_aliases_accept_python_and_wire_names[GetIssuesResponseItem]",
+    "已知的失败 tests/test_models_v2.py::test_unknown_fields_preserved_at_every_response_level"
+   ],
+   "data": {
+    "passed": 216,
+    "unexpected_failures": 1,
+    "known_failures": 3,
+    "known_failures_now_passing": 0
+   }
+  },
+  {
+   "name": "api_surface",
+   "status": "warn",
+   "summary": "2 处接口变化需要人看一下",
+   "details": [
+    "[warning] cortex_xdr_client.api.models.action_status.ActionStatuStr: 少了字段 ['__root__']",
+    "[warning] cortex_xdr_client.api.models.action_status.ActionStatuStr: 基类从 ['pydantic.main.BaseModel'] 变成了 ['pydantic.root_model.RootModel[Dict[Union[str, NoneType], Union[str, NoneType]]]']"
+   ],
+   "data": {
+    "error": 0,
+    "warning": 2,
+    "info": 0
+   }
+  },
+  {
+   "name": "dependency",
+   "status": "pass",
+   "summary": "装的是 pydantic 2.14.1, 依赖声明没有被改动",
+   "details": [],
+   "data": {}
+  },
+  {
+   "name": "change_scope",
+   "status": "pass",
+   "summary": "改动了 16 个文件, 都在源代码目录里",
+   "details": [],
+   "data": {
+    "changed_files": 16,
+    "outside_source": 0
+   }
+  },
+  {
+   "name": "isolation",
+   "status": "pass",
+   "summary": "agent 没有访问不该访问的 3 个路径",
+   "details": [
+    "检查的路径: d:/work/bumpwise/workspace/_mirrors",
+    "检查的路径: d:/work/bumpwise/tasks",
+    "检查的路径: d:/work/bumpwise/runs"
+   ],
+   "data": {}
+  }
+ ]
+}

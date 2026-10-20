@@ -1,0 +1,39 @@
+{
+  "experiment": {
+    "id": "smoke",
+    "description": "1 道题, 1 次, 标准配置",
+    "tasks": [
+      "cortex-xdr-client-pydantic2"
+    ],
+    "repeats": 1,
+    "max_total_tokens": 2500000,
+    "arms": [
+      {
+        "name": "standard",
+        "system_prompt": null,
+        "guards": null,
+        "token_budget": null,
+        "max_turns": null,
+        "model": null
+      }
+    ]
+  },
+  "harness": {
+    "commit": "8d2d8da1d9839b076eb10395d90e894b8ab70d3d",
+    "dirty": false
+  },
+  "settings": {
+    "provider": "deepseek-anthropic",
+    "api_format": "anthropic",
+    "base_url": "https://api.deepseek.com/anthropic",
+    "model": "deepseek-flash",
+    "max_tokens": 8192,
+    "max_turns": 80,
+    "token_budget": 2000000,
+    "command_timeout": 60,
+    "max_output_chars": 20000,
+    "llm_max_retries": 3,
+    "llm_timeout": 300.0
+  },
+  "started_at": "2026-10-20T16:24:40+08:00"
+}
