@@ -9,8 +9,8 @@ from bumpwise.tools import build_default_registry
 TOOLS_DIR = Path(tools_pkg.__file__).parent
 
 
-def test_default_registry_has_v1_tools():
-    assert sorted(build_default_registry().names) == ["edit_file", "read_file", "run_command", "write_file"]
+def test_default_registry_has_all_tools():
+    assert sorted(build_default_registry().names) == ["edit_file", "escalate", "read_file", "run_command", "write_file"]
 
 
 def test_every_tool_forbids_unknown_params():

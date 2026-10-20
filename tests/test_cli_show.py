@@ -150,3 +150,17 @@ def test_guard_events_are_shown(make_run):
     assert "[被护栏拦下]" in text
     assert "[护栏 cadence 出错, 已停用] KeyError: 'x'" in text
     assert "被护栏拦下 1 次), 护栏提醒 1 次" in text
+
+
+def test_handoff_is_shown(make_run):
+    handoff = {"category": "behavior_change", "summary": "数字不再自动转成字符串", "question": "要不要保持 v1 的行为?",
+               "options": ["加全局配置", "写进迁移说明"], "tried": [], "progress": "210 个测试通过"}
+    run_dir = make_run([
+        ("handoff", {"turn": 3, **handoff}),
+        ("tool_skipped", {"turn": 3, "id": "c2", "name": "write_file"}),
+    ], meta={**META, "status": "needs_human", "result": {**META["result"], "status": "needs_human", "handoff": handoff}})
+    text = render_run(run_dir)
+    assert "交给人处理 (behavior_change): 数字不再自动转成字符串" in text
+    assert "需要你决定: 要不要保持 v1 的行为?" in text and "    - 写进迁移说明" in text
+    assert "已经试过" not in text          # 空的列表不显示
+    assert "-> write_file   [已经交给人, 没有执行]" in text
