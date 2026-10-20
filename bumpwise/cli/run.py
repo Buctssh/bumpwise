@@ -24,7 +24,7 @@ from ..task import TaskError, load_task
 from ..task.workspace import LocalWorkspaceProvider
 from .errors import SetupError
 from .progress import ProgressPrinter
-from .show import load_grade, render_grade
+from .show import load_grade, render_grade, render_handoff
 
 LOCAL_ENV_WARNING = (
     "注意: 当前使用本地环境, agent 执行的命令拥有你的全部权限, 并且不受路径限制.\n"
@@ -168,6 +168,9 @@ def _print_summary(outcome: RunOutcome) -> None:
         if result.final_text.strip():
             print("\n最终回复:")
             print(result.final_text.strip())
+        if result.handoff is not None:
+            print()
+            print("\n".join(render_handoff(result.handoff)))
     if outcome.grade is not None:
         # 和 show 命令显示的完全一样: 都从运行目录里读, 不用内存里的对象
         print()

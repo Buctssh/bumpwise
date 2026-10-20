@@ -133,6 +133,8 @@ def render_run(run_dir: Path, max_chars: int | None = 1500) -> str:
                            f"{_clip(data['notice'], max_chars)}")
         elif kind == "final_tool_calls_ignored":
             out.append(f"  [最后一轮] 模型仍然调用了 {data.get('count')} 个工具, 没有执行")
+        elif kind == "tool_skipped":
+            out.append(f"  -> {data.get('name')}   [已经交给人, 没有执行]")
         elif kind == "stop":
             out.append("")
             out.append(f"停止: {data.get('status')}" + (f" ({data['error']})" if data.get("error") else ""))
@@ -152,12 +154,30 @@ def render_run(run_dir: Path, max_chars: int | None = 1500) -> str:
     out.append(f"耗时: 调用模型 {llm_seconds:.1f}s, 执行工具 {tool_seconds:.1f}s")
     if tools:
         out.append("工具: " + ", ".join(f"{name} {count}" for name, count in tools.most_common()))
+    if result.get("handoff"):
+        out.append("")
+        out.extend(render_handoff(result["handoff"]))
     if meta.get("status") == "crashed":
         out.append("\nharness 出错:\n" + meta.get("error", ""))
     if "grade" in meta:
         out.append("")
         out.extend(render_grade(meta["grade"], load_grade(run_dir), max_chars))
     return "\n".join(out) + "\n"
+
+
+# ============================================================================ 交给人
+
+
+def render_handoff(handoff: dict[str, Any]) -> list[str]:
+    """agent 交给人的内容 (escalate 的参数). run 的总结和 show 共用"""
+    lines = [f"交给人处理 ({handoff.get('category')}): {handoff.get('summary')}",
+             f"  需要你决定: {handoff.get('question')}"]
+    for title, key in (("可选的做法", "options"), ("已经试过", "tried")):
+        if handoff.get(key):
+            lines.append(f"  {title}:")
+            lines.extend(f"    - {item}" for item in handoff[key])
+    lines.append(f"  现在的状态: {handoff.get('progress')}")
+    return lines
 
 
 # ============================================================================ 评分

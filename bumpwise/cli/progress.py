@@ -57,6 +57,10 @@ class ProgressPrinter:
                 print(f"\n[预算] 已用 {data['used']:,} / {data['budget']:,} tokens ({data['phase']}): {_preview(data['notice'])}")
         elif event == "final_tool_calls_ignored":
             print(f"  [最后一轮] 模型仍然调用了 {data['count']} 个工具, 没有执行")
+        elif event == "handoff":
+            print(f"  [交给人] {data['category']}: {_preview(data['summary'])}")
+        elif event == "tool_skipped":
+            print(f"  -> {data['name']}   [已经交给人, 没有执行]")
         elif event == "tool_result":
             # "返回"而不是"完成": 工具执行成功, 不代表命令成功了 (比如测试失败时退出码不为 0)
             mark = "失败" if data["is_error"] else "返回"
