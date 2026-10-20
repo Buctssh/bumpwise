@@ -92,6 +92,8 @@ def result_meta(result: RunResult) -> dict[str, Any]:
         "turns": result.turns,
         "tool_calls": result.tool_calls,
         "denied_calls": result.denied_calls,
+        "blocked_calls": result.blocked_calls,
+        "guard_notices": result.guard_notices,
         "input_tokens": result.input_tokens,
         "cache_read_tokens": result.cache_read_tokens,
         "cache_write_tokens": result.cache_write_tokens,

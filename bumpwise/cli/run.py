@@ -149,8 +149,9 @@ def _print_summary(outcome: RunOutcome) -> None:
         print(outcome.error)
     result = outcome.result
     if result is not None:
-        print(f"调用模型 {result.turns} 次, 工具调用 {result.tool_calls} 次 (被拒绝 {result.denied_calls} 次), "
-              f"tokens: 输入 {result.input_tokens} + 缓存命中 {result.cache_read_tokens} "
+        print(f"调用模型 {result.turns} 次, 工具调用 {result.tool_calls} 次 (被拒绝 {result.denied_calls} 次, "
+              f"被护栏拦下 {result.blocked_calls} 次), 护栏提醒 {result.guard_notices} 次")
+        print(f"tokens: 输入 {result.input_tokens} + 缓存命中 {result.cache_read_tokens} "
               f"+ 写入缓存 {result.cache_write_tokens} / 输出 {result.output_tokens}")
         # HEAD 变了, 说明有提交发生. 权限策略禁止了 git commit, 这里再检查一次: 不相信 agent, 也不完全相信策略
         if outcome.end_commit != outcome.start_commit:

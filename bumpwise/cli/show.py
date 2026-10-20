@@ -112,12 +112,20 @@ def render_run(run_dir: Path, max_chars: int | None = 1500) -> str:
             # 参数原样输出 (JSON), 方便复制出来重现
             args = json.dumps(data.get("input", {}), ensure_ascii=False)
             mark = "" if data.get("decision") == "allow" else f"   [被拒绝: {data.get('rule')}]"
+            if data.get("blocked"):
+                mark = "   [被护栏拦下]"
             out.append(f"  -> {data['name']} {_clip(args, max_chars)}{mark}")
         elif kind == "tool_result":
             tool_seconds += data.get("duration_s", 0)
             mark = "失败" if data.get("is_error") else "返回"
             out.append(f"     {mark} ({data.get('duration_s', 0):.2f}s):")
             out.append(_indent(_clip(data.get("content", ""), max_chars), "       "))
+        elif kind == "guard":
+            # 护栏说的话: 被拦下的原因已经在工具结果里了, 这里只显示提醒
+            if data.get("hook") != "before_call":
+                out.append(f"  [护栏 {data.get('guard')}] {_clip(data.get('message', ''), max_chars)}")
+        elif kind == "guard_error":
+            out.append(f"  [护栏 {data.get('guard')} 出错, 已停用] {data.get('error')}")
         elif kind == "stop":
             out.append("")
             out.append(f"停止: {data.get('status')}" + (f" ({data['error']})" if data.get("error") else ""))
@@ -129,7 +137,8 @@ def render_run(run_dir: Path, max_chars: int | None = 1500) -> str:
     result = meta.get("result", {})
     if result:
         out.append(f"结果 {result.get('status')}, 调用模型 {result.get('turns')} 次, 工具调用 {result.get('tool_calls')} 次 "
-                   f"(被拒绝 {result.get('denied_calls')} 次)")
+                   f"(被拒绝 {result.get('denied_calls')} 次, 被护栏拦下 {result.get('blocked_calls', 0)} 次), "
+                   f"护栏提醒 {result.get('guard_notices', 0)} 次")
     if contexts:
         # 合计 = 这次运行一共发给模型的 token 数, 也就是计费的依据
         out.append(f"上下文: 第 1 轮 {contexts[0]} tokens, 最后一轮 {contexts[-1]} tokens, 合计 {sum(contexts)} tokens")

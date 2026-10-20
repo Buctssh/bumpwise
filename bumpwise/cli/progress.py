@@ -47,6 +47,10 @@ class ProgressPrinter:
             print(f"  -> {data['name']}({_summarize_args(data['input'])})")
             if data["decision"] != "allow":
                 print(f"     [被权限策略拒绝: {data['rule']}]")
+        elif event == "guard":
+            print(f"  [护栏 {data['guard']}] {_preview(data['message'])}")
+        elif event == "guard_error":
+            print(f"  [护栏 {data['guard']} 出错, 已停用] {data['error']}")
         elif event == "tool_result":
             # "返回"而不是"完成": 工具执行成功, 不代表命令成功了 (比如测试失败时退出码不为 0)
             mark = "失败" if data["is_error"] else "返回"
