@@ -80,6 +80,7 @@ class RunResult:
     error: str = ""                 # 非正常停止时的说明
     blocked_calls: int = 0          # 被护栏拦下的次数 (和被权限策略拒绝的分开统计)
     guard_notices: int = 0          # 护栏提醒的次数 (before_turn 和 after_call)
+    handoff: dict[str, Any] | None = None   # agent 交给人的内容 (escalate 的参数), 没有交给人时为 None
 
 
 # 事件回调: 循环在关键的时间点调用它,参数是事件名和事件内容
@@ -151,6 +152,7 @@ class _Run:
     prev_input: int = 0             # 上上一轮的完整输入
     last_output: int = 0            # 上一轮的输出
     final_text: str = ""
+    handoff: dict[str, Any] | None = None   # escalate 发出的控制信号: 不为 None 时, 这一轮的工具调用结束后就停下
     # 连续被截断的次数, 回复正常时清零. 它也是状态: 以后从检查点恢复运行时, 要接着这个计数继续
     truncations: int = 0
 
@@ -201,6 +203,7 @@ class AgentLoop:
             error=error,
             blocked_calls=run.blocked_calls,
             guard_notices=run.guard_notices,
+            handoff=run.handoff,
         )
         self._emit("stop", {"status": status.value, "error": error, "turns": run.turns})
         return result
@@ -278,9 +281,19 @@ class AgentLoop:
 
             # 以"有没有工具调用"为准, 而不是只看 stop_reason == "tool_use": 有些兼容接口的 stop_reason 不可靠
             if response.tool_uses:
-                results = [self._call_tool(call, run) for call in response.tool_uses]
+                results = []
+                for call in response.tool_uses:
+                    # 已经交给人了: 同一条回复里排在后面的调用不再执行 (比如"交给人"之后又改了一个文件).
+                    # 但每个 tool_use 都必须有对应的 tool_result, 否则历史就不合法, 以后也没法从这里接着运行
+                    if run.handoff is not None:
+                        results.append(self._skip_tool(call, run))
+                    else:
+                        results.append(self._call_tool(call, run))
                 # 同一条回复里的所有工具结果, 必须放进同一条 user 消息里, 和 tool_use 一一对应
                 run.messages.append({"role": "user", "content": results})
+                # 先把工具结果写进历史, 再停下: 历史停在一个完整的状态, 和其他的停止方式一样
+                if run.handoff is not None:
+                    return Status.NEEDS_HUMAN, ""
                 continue
 
             if response.stop_reason not in _END_REASONS:
@@ -326,6 +339,11 @@ class AgentLoop:
             result = ToolResult(blocked, is_error=True)
         else:
             result = self._registry.execute(name, args, self._ctx)
+            # 控制信号 (escalate): 记下来, 等这一轮的工具调用都处理完再停下 (见 _loop)
+            if result.handoff is not None:
+                run.handoff = result.handoff
+                # 单独的事件: 统计时不用翻工具调用的参数, 就能找到所有交给人的运行
+                self._emit("handoff", {"turn": run.turns, **result.handoff})
             notices = self._ask_guards("after_call", run, CallOutcome(tool_call, result.content, result.is_error))
             if notices:
                 run.guard_notices += len(notices)
@@ -345,6 +363,16 @@ class AgentLoop:
             "tool_use_id": call.get("id"),
             "content": result.content,
             "is_error": result.is_error
+        }
+
+    def _skip_tool(self, call: dict[str, Any], run: _Run) -> dict[str, Any]:
+        """已经交给人之后, 同一条回复里剩下的调用: 不执行, 只给出一个说明, 让历史保持完整"""
+        self._emit("tool_skipped", {"turn": run.turns, "id": call.get("id"), "name": call.get("name", "")})
+        return {
+            "type": "tool_result",
+            "tool_use_id": call.get("id"),
+            "content": "已经交给人处理, 这次调用没有执行.",
+            "is_error": True,
         }
 
     def _plan(self, run: _Run) -> Plan:
