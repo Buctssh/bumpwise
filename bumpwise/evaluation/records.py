@@ -32,6 +32,7 @@ class RunRecord:
 
     run_id: str
     task_id: str | None         # V3 之前 (--repo 方式) 的运行没有题目
+    arm: str | None             # 对照组的名字 (AgentConfig.name), V6 之前的运行没有
     status: str                 # 怎样停下的: finished, budget, max_turns, needs_human, prepare_failed, crashed ...
     verdict: str | None         # 评分的总评: pass, fail. 没有评分时为 None (不等于 fail)
     checks: dict[str, str]      # 每项检查的状态, 没有评分时为空
@@ -65,6 +66,7 @@ def load_record(run_dir: Path) -> RunRecord:
     return RunRecord(
         run_id=meta.get("run_id", run_dir.name),
         task_id=task.get("id"),
+        arm=meta.get("agent", {}).get("name"),
         status=meta.get("status", "unknown"),
         verdict=grade.get("verdict") if grade else None,
         checks={c["name"]: c["status"] for c in grade.get("checks", [])} if grade else {},

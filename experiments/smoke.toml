@@ -1,0 +1,11 @@
+# 冒烟测试 (ADR-020): 最终评测之前, 先用 1 道题跑 1 次, 确认整条流水线 (准备, 运行, 评分, 统计, 报告) 没有问题,
+# 再扩大规模. 避免一次花掉大量的钱, 才发现某个环节坏了
+id = "smoke"
+description = "1 道题, 1 次, 标准配置"
+tasks = ["cortex-xdr-client-pydantic2"]
+repeats = 1
+# 一次运行的预算是 200 万, 留一点余量
+max_total_tokens = 2_500_000
+
+[[arms]]
+name = "standard"
