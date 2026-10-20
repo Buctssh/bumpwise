@@ -229,3 +229,16 @@ def test_evaluation_never_reaches_the_agent(settings, remote, monkeypatch):
     for marker in (secret_commit, "FORBIDDEN-MARKER", "REASON-MARKER"):
         assert marker not in sent, marker
         assert marker not in prompts, marker
+
+
+def test_guards_are_recorded_and_used(settings, remote, monkeypatch):
+    # 每次运行都带上默认的护栏, 并在 meta 里记下是哪几个
+    monkeypatch.setattr(runner_run, "prepare", fake_prepare)
+    read = LLMResponse(content=[{"type": "tool_use", "id": "c1", "name": "read_file", "input": {"path": "app.py"}}],
+                       stop_reason="tool_use")
+    read2 = LLMResponse(content=[{"type": "tool_use", "id": "c2", "name": "read_file", "input": {"path": "app.py"}}],
+                        stop_reason="tool_use")
+    outcome = run(settings, make_task(remote), FakeLLM(read, read2, reply("完成")))
+    meta = load_meta(outcome)
+    assert meta["guards"] == ["pipe_exit_code", "repeat", "test_cadence"]
+    assert meta["result"]["guard_notices"] == 1      # 第二次读同一个文件, 内容没变, repeat 提醒了一次

@@ -7,6 +7,7 @@ import pytest
 
 from bumpwise.env import LocalEnvironment
 from bumpwise.tools import ToolContext, build_default_registry
+from bumpwise.tools.shell import format_result, parse_result
 
 
 # 用当前运行测试的 Python 扮演目标仓库 venv 里的 Python
@@ -68,3 +69,14 @@ def test_old_name_run_no_longer_exists(ctx, tools):
     result = tools.execute("run", {"command": "echo hi"}, ctx)
     assert result.is_error
     assert "run_command" in result.content  # 报错里列出了可用的工具
+
+
+@pytest.mark.parametrize("exit_code, duration, output", [(0, 0.04, "ok\n"), (4, 12.3, "E  失败\n第二行"), (-1, 0.0, ""), (1, 1.0, "退出码：0（耗时 1.0 秒）\n")])
+def test_result_format_round_trip(exit_code, duration, output):
+    # 往返测试: 写法和解析必须一致. 两者不一致时, 护栏读不出退出码, 不会报错, 只会悄悄失效
+    assert parse_result(format_result(exit_code, duration, output)) == (exit_code, output)
+
+
+def test_parse_result_rejects_other_text():
+    assert parse_result("命令超时 (60 秒), 已被终止") is None
+    assert parse_result("退出码: 0 (耗时 0.1秒) \nok") is None     # 半角的标点不是 run_command 的格式
