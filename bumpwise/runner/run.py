@@ -1,7 +1,7 @@
-"""一次运行的编排: (准备) → agent 循环 → 运行记录. 命令行 (cli) 和以后的批量评测 (V6) 都调用这里.
+"""一次运行的编排: (准备) → agent 循环 → 运行记录 → (评分). 命令行 (cli) 和以后的批量评测 (V6) 都调用这里.
 
 两种运行方式:
-    run_task: 照着题目文件运行. 创建全新的工作区, 跑准备流水线, 再运行 agent. 评测用的是这种方式;
+    run_task: 照着题目文件运行. 创建全新的工作区, 跑准备流水线, 再运行 agent, 最后评分 (题目有评测信息时). 评测用的是这种方式;
     run_repo: 在一个已经准备好的仓库上直接运行 agent, 不经过流水线. 用于调试, 也就是 V1 的用法.
 两种方式共用同一段"运行 agent 并记录"的代码 (_run_agent).
 
@@ -19,7 +19,7 @@ from typing import Any
 
 from ..config import Settings
 from ..env import Environment
-from ..harness.loop import AgentLoop, EventHandler, RunResult, fan_out
+from ..harness.loop import AgentLoop, EventHandler, RunResult, Status, fan_out
 from ..harness.policy import RulePolicy
 from ..harness.prompts import build_system_prompt, build_task_message
 from ..harness.trace import MESSAGES_FILE, TraceWriter, new_run_id, now_iso
@@ -29,17 +29,12 @@ from ..task.prepare import PrepareError, prepare
 from ..task.workspace import WorkspaceError, WorkspaceProvider
 from ..tools import ToolContext, build_default_registry
 from . import record
+from .record import CRASHED, INTERRUPTED, PREPARE_FAILED, RUNNING
+from .grade import GradeOutcome, grade_run, private_paths
 
 # agent 的临时目录 (相对于仓库根目录): 放实验脚本这类不属于改动的文件.
 # 目录里放一个内容为 * 的 .gitignore, 整个目录就会被 git 忽略, 不会出现在 git status 里
 SCRATCH_DIR = ".bumpwise"
-
-# meta.json 里, 除了 agent 的停止方式 (Status 的值) 之外的几种状态.
-# 统计时: agent 的停止方式算进 agent 的成绩; prepare_failed 说明题目或环境有问题; crashed 说明 harness 有 bug, 要重跑
-RUNNING = "running"
-PREPARE_FAILED = "prepare_failed"   # 准备失败: 题目或环境有问题, agent 没有运行
-CRASHED = "crashed"                 # harness 自己出错了
-INTERRUPTED = "interrupted"         # 在 agent 循环之外被 Ctrl+C 打断 (循环里的 Ctrl+C 由 loop 自己处理)
 
 
 @dataclass(frozen=True)
@@ -69,6 +64,7 @@ class RunOutcome:
     start_commit: str = ""       # agent 的起点
     end_commit: str = ""         # 结束时的 HEAD, 和起点不同说明运行过程中产生了提交
     changes: str = ""            # 结束时的 git status --short
+    grade: GradeOutcome | None = None   # 评分的结果. 没有评分 (agent 没有正常结束, 或者调用方关掉了评分) 时为 None
 
 
 def run_task(
@@ -79,8 +75,10 @@ def run_task(
     provider: WorkspaceProvider,
     base_python: str,
     observers: Sequence[EventHandler] = (),
+    grade: bool = True,
 ) -> RunOutcome:
-    """照着题目运行一次: 创建工作区 → 准备 → agent 循环 → 运行记录"""
+    """照着题目运行一次: 创建工作区 → 准备 → agent 循环 → 运行记录 → 评分.
+    grade=False 时不评分 (调试时省掉准备旧版本的时间), 之后可以用 grade 命令补上"""
     run_id = new_run_id(task.id)
     # 先创建 trace, 再做别的: 准备阶段的每一步也要记下来. 密钥交给 trace 用于脱敏
     trace = TraceWriter(settings.runs_dir, run_id, secrets=[settings.api_key])
@@ -114,13 +112,23 @@ def run_task(
 
         meta["prepare"] = {
             "workdir": env.workdir,
+            # 事后补评分时, 旧版本的环境要用同一个 Python 来创建
+            "base_python": base_python,
             "start_commit": prepared.start_commit,
             "baseline": record.test_meta(prepared.baseline),
             "upgraded": record.test_meta(prepared.upgraded),
         }
         m = task.migration
         agent_task = AgentTask(m.package, m.target, prepared.state, m.test_command, m.notes)
-        return _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event)
+        outcome = _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event)
+        # 只给正常结束的运行评分: 其他情况 (达到轮数上限, 交给人, 调用模型失败) 工作区停在不确定的状态, 评分没有意义.
+        # 评分在工作区关闭之前进行 (finally 里才关闭): 以后工作区是容器, 关闭就销毁了
+        if grade and outcome.status == Status.FINISHED.value:
+            result = grade_run(task, env, prepared.start_commit, trace, meta, provider=provider,
+                               base_python=base_python, isolation_paths=private_paths(provider, settings.runs_dir),
+                               on_event=fan_out(*observers))
+            outcome = dataclasses.replace(outcome, grade=result)
+        return outcome
     except BaseException as e:
         # 其他一切都是预料之外的: 记录下来, 再原样抛出
         _record_crash(trace, meta, e)

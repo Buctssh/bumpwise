@@ -17,6 +17,13 @@ from ..task.prepare import TestOutcome
 # core.quotePath=false: 文件名里有中文时原样显示, 而不是转义成 "\346\226\260..." 这样的八进制
 GIT_STATUS = "-c core.quotePath=false status --short"
 
+# meta.json 里, 除了 agent 的停止方式 (Status 的值) 之外的几种状态.
+# 统计时: agent 的停止方式算进 agent 的成绩; prepare_failed 说明题目或环境有问题; crashed 说明 harness 有 bug, 要重跑
+RUNNING = "running"
+PREPARE_FAILED = "prepare_failed"   # 准备失败: 题目或环境有问题, agent 没有运行
+CRASHED = "crashed"                 # harness 自己出错了
+INTERRUPTED = "interrupted"         # 在 agent 循环之外被 Ctrl+C 打断 (循环里的 Ctrl+C 由 loop 自己处理)
+
 
 class RunnerError(Exception):
     """运行前后在工作区里执行 git 失败 (比如目录不是 git 仓库). 错误信息直接展示给使用者"""
