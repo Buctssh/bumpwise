@@ -19,6 +19,7 @@ from typing import Any
 
 from ..config import Settings
 from ..env import Environment
+from ..harness.budget import TokenBudget
 from ..harness.guards import default_guards
 from ..harness.loop import AgentLoop, EventHandler, RunResult, Status, fan_out
 from ..harness.policy import RulePolicy
@@ -47,6 +48,7 @@ class AgentTask:
     state: str          # 仓库的当前状态. run_task 里由准备流水线根据真实的测试结果生成
     test_command: str
     notes: str = ""
+    budget: int | None = None   # 这道题的 token 预算. None 表示用配置里的默认值
 
 
 @dataclass(frozen=True)
@@ -120,7 +122,8 @@ def run_task(
             "upgraded": record.test_meta(prepared.upgraded),
         }
         m = task.migration
-        agent_task = AgentTask(m.package, m.target, prepared.state, m.test_command, m.notes)
+        agent_task = AgentTask(m.package, m.target, prepared.state, m.test_command, m.notes,
+                               budget=task.budget.tokens if task.budget is not None else None)
         outcome = _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event)
         # 只给正常结束的运行评分: 其他情况 (达到轮数上限, 交给人, 调用模型失败) 工作区停在不确定的状态, 评分没有意义.
         # 评分在工作区关闭之前进行 (finally 里才关闭): 以后工作区是容器, 关闭就销毁了
@@ -191,6 +194,7 @@ def _run_agent(
     policy = RulePolicy(protected_packages=[agent_task.package])
     # 护栏有状态, 每次运行都新建
     guards = default_guards(agent_task.test_command, SCRATCH_DIR)
+    budget = TokenBudget(agent_task.budget or settings.token_budget)
     info = env.describe()
     system = build_system_prompt(info, policy.describe(), SCRATCH_DIR)
     task_message = build_task_message(
@@ -206,6 +210,8 @@ def _run_agent(
         policy=policy.describe(),
         # 记下用了哪些护栏: 对比两次运行时, 护栏不同也是一种"条件不同"
         guards=[guard.name for guard in guards],
+        # 预算来自题目还是默认值: 比较两次运行时, 预算不同也是一种"条件不同"
+        budget={"tokens": budget.tokens, "source": "task" if agent_task.budget else "default"},
     )
     trace.write_meta(meta)
     on_event("agent_start", {
@@ -213,6 +219,7 @@ def _run_agent(
         "head": start_commit,
         "model": f"{settings.provider} / {settings.model}",
         "max_turns": settings.max_turns,
+        "budget": budget.tokens,
         "prompts": {"system": f"{system.name} {system.sha256[:12]}", "task": f"{task_message.name} {task_message.sha256[:12]}"},
     })
 
@@ -225,6 +232,7 @@ def _run_agent(
         # 同一个 on_event: 准备阶段和 agent 阶段的事件, 按时间顺序写进同一个 events.jsonl
         on_event=on_event,
         guards=guards,
+        budget=budget,
     )
     result = loop.run(system.text, task_message.text)
 

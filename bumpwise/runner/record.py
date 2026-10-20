@@ -61,6 +61,7 @@ def settings_meta(settings: Settings) -> dict[str, Any]:
         "model": settings.model,
         "max_tokens": settings.max_tokens,
         "max_turns": settings.max_turns,
+        "token_budget": settings.token_budget,
         "command_timeout": settings.command_timeout,
         "max_output_chars": settings.max_output_chars,
         "llm_max_retries": settings.llm_max_retries,
