@@ -195,7 +195,7 @@ class FakeLLM:
     def __init__(self, *responses: LLMResponse) -> None:
         self._responses = list(responses)
 
-    def create(self, system, tools, messages):
+    def create(self, system, tools, messages, tool_choice="auto"):
         return self._responses.pop(0)
 
 

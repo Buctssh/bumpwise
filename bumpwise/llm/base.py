@@ -36,6 +36,10 @@ class LLMResponse:
 class LLMClient(Protocol):
     """LLM客户端接口"""
 
-    def create(self, system: str, tools: list[dict], messages: list[dict]) -> LLMResponse:
-        """调用一次模型。tools 和 messages 都使用内部格式。"""
+    def create(self, system: str, tools: list[dict], messages: list[dict], tool_choice: str = "auto") -> LLMResponse:
+        """调用一次模型。tools 和 messages 都使用内部格式。
+
+        tool_choice: "auto" 由模型决定是否调用工具; "none" 不允许调用工具, 只能回复文字 (最后一轮写报告时用).
+        "none" 时工具的定义照常发送: 历史里有 tool_use 时, 接口要求请求里必须带上工具的定义
+        """
         ...

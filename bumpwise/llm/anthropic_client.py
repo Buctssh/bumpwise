@@ -19,13 +19,16 @@ class AnthropicClient:
             timeout=settings.llm_timeout
         )
 
-    def create(self, system: str, tools: list[dict], messages: list[dict]) -> LLMResponse:
+    def create(self, system: str, tools: list[dict], messages: list[dict], tool_choice: str = "auto") -> LLMResponse:
+        # 只在不是默认值时才传 tool_choice: 平时的请求和以前完全一样, 不影响兼容接口, 也不影响缓存
+        extra = {"tool_choice": {"type": tool_choice}} if tool_choice != "auto" else {}
         resp = self._client.messages.create(
             model=self._settings.model,
             max_tokens=self._settings.max_tokens,
             system=system,
             tools=tools,
-            messages=messages
+            messages=messages,
+            **extra,
         )
 
         usage = resp.usage

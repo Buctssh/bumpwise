@@ -22,7 +22,7 @@ class FakeLLM:
         self._responses = list(responses)
         self.systems: list[str] = []
 
-    def create(self, system, tools, messages):
+    def create(self, system, tools, messages, tool_choice="auto"):
         self.systems.append(system)
         return self._responses.pop(0)
 
@@ -338,3 +338,24 @@ def test_missing_task_file(fake_llm, tmp_path, capsys):
     fake_llm()
     assert main(["run", "--task", str(tmp_path / "nope.toml")]) == 1
     assert "找不到题目文件" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------- 预算 (V5)
+
+def test_token_budget_option_and_exit_code(repo, fake_llm, tmp_path, capsys):
+    # 预算很小: 第 2 轮放不下下一轮, 第 2 轮就是最后一轮, 不能调用工具, 以 budget 结束
+    big = LLMResponse(content=[{"type": "tool_use", "id": "c1", "name": "read_file", "input": {"path": "app.py"}}],
+                      stop_reason="tool_use", input_tokens=4000, output_tokens=100)
+    fake_llm(big, reply("最终报告"))
+    assert main(run_args(repo, "--token-budget", "10000")) == cli_run.EXIT_CODES[cli_run.Status.BUDGET] == 14
+    out = capsys.readouterr().out
+    assert "预算 10,000 tokens" in out
+    meta = json.loads((only_run_dir(tmp_path) / "meta.json").read_text(encoding="utf-8"))
+    assert meta["budget"] == {"tokens": 10_000, "source": "default"}
+    assert meta["status"] == "budget"
+
+
+def test_token_budget_must_be_positive(repo, fake_llm, capsys):
+    fake_llm(reply("完成"))
+    assert main(run_args(repo, "--token-budget", "0")) == 1
+    assert "--token-budget 必须大于 0" in capsys.readouterr().err
