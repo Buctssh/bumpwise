@@ -19,6 +19,7 @@ from typing import Any
 
 from ..config import Settings
 from ..env import Environment
+from ..harness.guards import default_guards
 from ..harness.loop import AgentLoop, EventHandler, RunResult, Status, fan_out
 from ..harness.policy import RulePolicy
 from ..harness.prompts import build_system_prompt, build_task_message
@@ -188,6 +189,8 @@ def _run_agent(
     # 临时目录在冻结之后才创建: 它自带一个内容为 * 的 .gitignore, 不会让工作区变"脏"
     env.write_bytes(f"{SCRATCH_DIR}/.gitignore", b"*\n")
     policy = RulePolicy(protected_packages=[agent_task.package])
+    # 护栏有状态, 每次运行都新建
+    guards = default_guards(agent_task.test_command, SCRATCH_DIR)
     info = env.describe()
     system = build_system_prompt(info, policy.describe(), SCRATCH_DIR)
     task_message = build_task_message(
@@ -201,6 +204,8 @@ def _run_agent(
         repo={"head_start": start_commit},
         prompts=record.prompts_meta(system, task_message),
         policy=policy.describe(),
+        # 记下用了哪些护栏: 对比两次运行时, 护栏不同也是一种"条件不同"
+        guards=[guard.name for guard in guards],
     )
     trace.write_meta(meta)
     on_event("agent_start", {
@@ -219,6 +224,7 @@ def _run_agent(
         max_turns=settings.max_turns,
         # 同一个 on_event: 准备阶段和 agent 阶段的事件, 按时间顺序写进同一个 events.jsonl
         on_event=on_event,
+        guards=guards,
     )
     result = loop.run(system.text, task_message.text)
 
