@@ -1,6 +1,6 @@
 """架构测试: 检查包之间的依赖方向, 见 docs/decisions.md 的 ADR-014.
 
-依赖只能从上往下:  cli → runner → grading → task → harness → tools → env,  harness → llm → config
+依赖只能从上往下:  cli → evaluation → runner → grading → task → harness → tools → env,  harness → llm → config
 下层不知道上层的存在. 例如 harness 导入了 cli, 或者 env 导入了 tools, 这里都会失败.
 新增一个包时, 必须先在 ALLOWED 里写明它在哪一层, 可以依赖谁, 否则这里也会失败.
 """
@@ -23,7 +23,8 @@ ALLOWED: dict[str, set[str]] = {
     "task": {"config", "env", "harness"},                                # 题目, 工作区, 准备流水线 (不知道模型的存在)
     "grading": {"config", "env", "harness", "task"},                     # 评分 (不需要模型)
     "runner": {"config", "env", "llm", "tools", "harness", "task", "grading"},     # 编排一次运行 (不知道命令行的存在)
-    "cli": {"config", "env", "llm", "tools", "harness", "task", "grading", "runner"},  # 命令行, 最上层
+    "evaluation": {"config", "tools", "harness", "task", "grading", "runner"},    # 评测: 批量运行, 统计, 报告 (V6)
+    "cli": {"config", "env", "llm", "tools", "harness", "task", "grading", "runner", "evaluation"},  # 命令行, 最上层
     "__main__": {"cli"},
 }
 
