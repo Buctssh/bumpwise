@@ -1,0 +1,12 @@
+# 补上空白 (docs/v7/bank-use.md): bank-use 的 5 次失败都来自数字到字符串, 当时卡片库里没有这条经验.
+# 从真实的题目 pyrolab 学到卡片 (验证通过) 之后, 在两道失败过的构造题上各重跑 3 次. 设置和 bank-use 完全一样, 只是卡片库多了一张
+id = "bank-gap"
+description = "weather-feed, crm-contacts 带记忆各 3 次: 数字到字符串的卡片能不能补上 bank-use 的失败"
+tasks = ["weather-feed-pydantic2", "crm-contacts-pydantic2"]
+repeats = 3
+# bank-use 里这两道题平均每次约 27 万 tokens, 按每次 100 万留出余量
+max_total_tokens = 6_000_000
+
+[[arms]]
+name = "memory"
+memory = true

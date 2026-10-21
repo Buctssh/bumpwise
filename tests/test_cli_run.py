@@ -391,6 +391,22 @@ def test_memory_flag_turns_on_memory(repo, fake_llm, tmp_path, monkeypatch, caps
     assert meta["agent"]["memory"] is True and meta["agent"]["name"] == "memory" and "memory" in meta
 
 
+def test_learn_grades_unfinished_runs(repo, fake_llm, tmp_path, monkeypatch):
+    # pyrolab: 预算用完的运行没有评分, --learn 就没有做反思. 用了 --learn 时, 没做完的运行也要评分
+    seen = {}
+
+    def fake_run_task(task, **kwargs):
+        seen.update(kwargs)
+        raise cli_run.RunnerError("停在这里")
+
+    monkeypatch.setattr(cli_run, "run_task", fake_run_task)
+    fake_llm()
+    main(["run", "--task", str(write_task_file(tmp_path, repo)), "--learn"])
+    assert seen["grade_unfinished"] is True
+    main(["run", "--task", str(write_task_file(tmp_path, repo))])
+    assert seen["grade_unfinished"] is False
+
+
 class _Report:
     def __init__(self, verdict):
         self.verdict = verdict

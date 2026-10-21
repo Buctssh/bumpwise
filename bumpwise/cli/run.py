@@ -131,6 +131,9 @@ def _run_task(args: argparse.Namespace, settings: Settings, observers) -> RunOut
         base_python=default_base_python(args.base_python),
         observers=observers,
         grade=not args.no_grade,
+        # --learn 时, 没做完就停下的运行 (比如用完了预算) 也要评分: 它们恰恰是最需要学的. 和 eval run 的规则一样.
+        # 来自 pyrolab: 预算用完, 没有评分, --learn 就没有做反思
+        grade_unfinished=args.learn,
         agent=AgentConfig(name="memory" if args.memory else "default", memory=args.memory),
     )
 
