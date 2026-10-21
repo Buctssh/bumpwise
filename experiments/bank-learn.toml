@@ -3,10 +3,10 @@
 # cortex 学到的卡片在 cortex 上被排除 (ADR-024), 所以这里只放还没有学过的题目
 id = "bank-learn"
 description = "真实的题目, 带记忆, 各 1 次. 失败的运行用来提炼经验"
-tasks = ["gpuhunt-pydantic2"]
+tasks = ["gpuhunt-pydantic2", "connect-eaas-core-pydantic2", "maco-pydantic2"]
 repeats = 1
-# 一次运行的预算是 200 万, 留一点余量
-max_total_tokens = 2_500_000
+# 一次运行的预算是 200 万, 3 次再留一点余量
+max_total_tokens = 7_000_000
 
 [[arms]]
 name = "memory"

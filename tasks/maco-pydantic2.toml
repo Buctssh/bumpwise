@@ -1,0 +1,50 @@
+# 题目: Maco 从 pydantic 1 迁移到 pydantic 2 (真实的仓库, 可以提炼经验)
+# 来源: CybercentreCanada/Maco 的提交 10becfc "Feat: upgrade to pydantic version 2" (2023-11-02, 由 dan-acsc/Maco 的 PR #1 合并而来).
+# 找题的过程见 docs/v7/bank.md
+id = "maco-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "恶意软件配置提取器的框架 (加拿大网络安全中心): 输出的模型很大, 大量 x: str = None 的写法"
+
+[repo]
+url = "https://github.com/CybercentreCanada/Maco.git"
+base_commit = "1f5dec4d3b38e37d9918a92668fdce2f63477056"
+
+[environment]
+python = "3.12"
+# setup.py 用 setuptools_scm 读版本号, pip 默认的隔离构建环境里没有它: 先装好构建工具, 再关掉构建隔离安装
+install = ['python -m pip install setuptools setuptools_scm "pytest>=7.4,<9"', 'python -m pip install --no-build-isolation -e .']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+# 去掉 test_model_invalid: 它把模型实例交给 parse_obj, 期待重新校验时报错. v1 会重新校验实例, v2 默认不会
+# (revalidate_instances 默认是 never). 作者没有保留这个行为, 而是把测试改成传字典; 改过的版本在隐藏测试里
+test_command = "python -m pytest -q tests --deselect tests/test_model.py::TestModel::test_model_invalid"
+
+[[migration.edits]]
+file = "requirements.txt"
+old = "pydantic==1.10.9"
+new = "pydantic>=2,<3"
+
+# 仓库里的第二个包 (只发布 maco.model) 也声明了 pydantic 的版本
+[[migration.edits]]
+file = "model_setup/setup.py"
+old = 'install_requires=["pydantic==1.10.9"]'
+new = 'install_requires=["pydantic>=2,<3"]'
+
+# ============================================================================ 评测信息
+[evaluation]
+# model_setup 里只有打包文件 (它的依赖声明由上面的 edits 修改), 不算源代码
+source = ["maco", "demo_extractors"]
+packages = ["maco"]
+forbidden = ["parse_obj(", ".dict(", "class Config:", "Extra.forbid"]
+# x: str = None: v1 把它当成 Optional[str], v2 不会 (传入 None 会报错). 模型里没有注解的类属性: v2 报错
+pitfalls = ["implicit-optional-none-default", "class-attribute-in-model", "revalidate-instances"]
+
+[evaluation.hidden_tests]
+# 参考答案: 上游的迁移提交
+commit = "10becfc2a3d8b895678f0cedd6db38bea8e42672"
+# 只取 PR 改过的 test_model.py: test_base_test 和 test_helpers 用的是相对于仓库根目录的路径, 放进隐藏测试的目录就找不到文件
+paths = ["tests/test_model.py"]
