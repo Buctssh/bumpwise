@@ -138,7 +138,10 @@ def check_hidden_tests(env: Environment, hidden: HiddenTestsSpec | None, files: 
     # 已知的失败现在通过了: 可能是 agent 做了参考答案额外的功能, 记下来, 但不影响结论
     now_passing = [k.test for k in hidden.known_failures if not any(_matches(t, k.test) for t in not_passed)]
     data = {"passed": report.count("passed"), "unexpected_failures": len(unexpected),
-            "known_failures": len(expected), "known_failures_now_passing": len(now_passing)}
+            "known_failures": len(expected), "known_failures_now_passing": len(now_passing),
+            # 意外失败的报错 (最后的部分): 反思 (V7) 要知道"为什么"失败, 而不只是"哪个测试"失败了.
+            # 只给人和反思看, 不会进 agent 的 prompt; 从这道题学到的经验也不会用在这道题上 (ADR-024)
+            "failure_messages": {t: report.failures.get(t, "")[-1500:] for t in sorted(unexpected)}}
     details = [f"意外的失败 {t}: {o}" for t, o in sorted(unexpected.items())]
     details += [f"已知的失败 {t}" for t in sorted(expected)]
     details += [f"已知的失败现在通过了 {t}" for t in now_passing]

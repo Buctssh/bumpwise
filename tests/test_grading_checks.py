@@ -166,6 +166,9 @@ def test_hidden_tests_separate_unexpected_and_known_failures(repo):
     assert "意外的失败 tests/test_hidden.py::test_real_bug: failed" in result.details
     assert "已知的失败现在通过了 tests/test_hidden.py::test_was_known_but_passes" in result.details
     assert result.data["passed"] == 2   # test_ok (用了隐藏测试自己的 conftest) 和 test_was_known_but_passes
+    # 意外失败的报错留给反思 (V7): 要知道为什么失败, 而不只是哪个测试失败了. 已知的失败不需要
+    messages = result.data["failure_messages"]
+    assert list(messages) == ["tests/test_hidden.py::test_real_bug"] and "behavior changed" in messages["tests/test_hidden.py::test_real_bug"]
 
 
 def test_hidden_tests_pass_when_only_known_failures(repo):
