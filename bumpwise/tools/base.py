@@ -22,6 +22,16 @@ class ToolParams(BaseModel):
 
 
 @dataclass(frozen=True)
+class Baseline:
+    """旧版本的对比环境 (V7, ADR-026): 准备流水线建好的, 只装了旧版本目标依赖的虚拟环境"""
+
+    python: str             # 对比环境的 python (相对于工作区)
+    package: str
+    old_version: str
+    new_version: str
+
+
+@dataclass(frozen=True)
 class ToolContext:
     """工具执行时的运行信息"""
 
@@ -29,6 +39,7 @@ class ToolContext:
     command_timeout: float  # 命令的默认超时时间(秒)
     max_output_chars: int   # 返回给模型的内容最多多少字符
     experience: ExperienceSession | None = None     # 这次运行的经验 (V7), 经验的工具用它. 没有启用记忆时为 None
+    baseline: Baseline | None = None                # 旧版本的对比环境, compare_versions 用它. --repo 方式的运行没有
 
 
 class ToolError(Exception):

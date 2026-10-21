@@ -31,7 +31,7 @@ from ..memory import ExperienceSession, MemoryStore, match_cards
 from ..task import TaskSpec
 from ..task.prepare import PrepareError, prepare
 from ..task.workspace import WorkspaceError, WorkspaceProvider
-from ..tools import ToolContext, build_default_registry
+from ..tools import Baseline, ToolContext, build_default_registry
 from . import record
 from .record import CRASHED, INTERRUPTED, PREPARE_FAILED, RUNNING
 from .grade import GradeOutcome, grade_run, private_paths
@@ -80,6 +80,8 @@ class AgentConfig:
     # 只用这几张卡片, 不管它们的状态, 也不排除学到它的题目. **只用于验证一张新的卡片** (在学到它的题目上带着它重跑):
     # 证明它是对的, agent 能照着做. 评测时绝对不能用它, 否则等于告诉了答案 (ADR-024)
     memory_cards: tuple[str, ...] | None = None
+    # 给不给 agent 对比实验的工具 (V7, ADR-026). 只在有旧版本环境时 (run_task) 生效
+    compare_versions: bool = True
 
 
 @dataclass(frozen=True)
@@ -152,6 +154,7 @@ def run_task(
             # 事后补评分时, 旧版本的环境要用同一个 Python 来创建
             "base_python": base_python,
             "start_commit": prepared.start_commit,
+            "baseline_python": prepared.baseline_python,
             "baseline": record.test_meta(prepared.baseline),
             "upgraded": record.test_meta(prepared.upgraded),
         }
@@ -159,7 +162,8 @@ def run_task(
         agent_task = AgentTask(m.package, m.target, prepared.state, m.test_command, m.notes,
                                budget=task.budget.tokens if task.budget is not None else None,
                                task_id=task.id, from_version=m.from_version, to_version=m.to_version)
-        outcome = _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event, agent)
+        baseline = Baseline(prepared.baseline_python, m.package, m.from_version, m.to_version)
+        outcome = _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event, agent, baseline)
         # 平时只给正常结束的运行评分: 其他情况下工作区停在做到一半的状态, 人看评分的意义不大.
         # 评测时 (grade_unfinished) 要给每一次 agent 真正运行过的结果评分: 没做完也是一种成绩, 不评分的话,
         # 它们在统计里都会变成 ungraded, 通过率只算了"做完了的那些", 会被高估.
@@ -227,8 +231,10 @@ def _run_agent(
     meta: dict[str, Any],
     on_event: EventHandler,
     agent: AgentConfig,
+    baseline: Baseline | None = None,
 ) -> RunOutcome:
-    """两种运行方式共用的部分: 准备 agent 的上下文, 运行循环, 写完运行记录"""
+    """两种运行方式共用的部分: 准备 agent 的上下文, 运行循环, 写完运行记录.
+    baseline: 旧版本的对比环境, 只有经过准备流水线的运行 (run_task) 才有"""
     # 临时目录在冻结之后才创建: 它自带一个内容为 * 的 .gitignore, 不会让工作区变"脏"
     env.write_bytes(f"{SCRATCH_DIR}/.gitignore", b"*\n")
     policy = RulePolicy(protected_packages=[agent_task.package])
@@ -236,8 +242,10 @@ def _run_agent(
     guards = default_guards(agent_task.test_command, SCRATCH_DIR, agent.guards)
     # 长期记忆: 选出这次可以用的经验, 在工作区里匹配触发条件. 推送由护栏负责 (和其他护栏一样, 每次运行都新建)
     session, memory_meta = _select_experience(env, agent_task, settings, agent.memory_cards) if agent.memory else (None, None)
+    if not agent.compare_versions:
+        baseline = None
     if session is not None:
-        guards.append(ExperienceGuard(session, agent_task.test_command))
+        guards.append(ExperienceGuard(session, agent_task.test_command, compare_versions=baseline is not None))
     # 预算的优先级: 对照组 > 题目 > 配置的默认值. 记下来自哪里: 比较两次运行时, 预算不同也是一种"条件不同"
     if agent.token_budget:
         budget, budget_source = TokenBudget(agent.token_budget), "agent"
@@ -284,10 +292,11 @@ def _run_agent(
     loop = AgentLoop(
         llm=llm,
         # 经验的工具只在有可以用的经验时注册: 没有经验的运行, 工具定义和以前完全一样
-        registry=build_default_registry(experience=session is not None and bool(session.cards)),
+        registry=build_default_registry(experience=session is not None and bool(session.cards),
+                                        compare_versions=baseline is not None),
         policy=policy,
         ctx=ToolContext(env=env, command_timeout=settings.command_timeout, max_output_chars=settings.max_output_chars,
-                        experience=session),
+                        experience=session, baseline=baseline),
         max_turns=max_turns,
         # 同一个 on_event: 准备阶段和 agent 阶段的事件, 按时间顺序写进同一个 events.jsonl
         on_event=on_event,

@@ -4,6 +4,7 @@
     1. 检查 Python 版本, 创建虚拟环境;
     2. 安装依赖, 装上旧版本 (from_version);
     3. 跑基线测试: 旧版本下测试必须通过, 否则题目无效;
+       再建一个只装了旧版本目标依赖的对比环境, agent 用它在旧版本下做实验 (V7, ADR-026);
     4. 修改依赖声明 (edits) 并提交: 这个提交就是 agent 的起点;
     5. 装上新版本 (to_version), 再跑一次测试, 记下失败的情况, 整理成给 agent 的"当前状态";
     6. 冻结: 准备过程中产生的文件 (虚拟环境, egg-info, 缓存) 不算改动, 确认工作区是干净的.
@@ -20,7 +21,7 @@ from pathlib import PurePosixPath
 from ..env import Environment, ExecResult, PathOutsideWorkdir
 from ..harness.loop import EventHandler
 from .spec import Edit, MigrationSpec, TaskSpec
-from .workspace import VENV_DIR, Workspace
+from .workspace import BASELINE_PYTHON, BASELINE_VENV_DIR, VENV_DIR, Workspace
 
 
 # 每一步都有超时上限: 网络卡住或者测试死循环时, 流水线不能一直挂着
@@ -71,6 +72,7 @@ class PreparedTask:
     baseline: TestOutcome           # 旧版本下的测试结果 (要求基线通过时, 一定是通过的)
     upgraded: TestOutcome           # 新版本下, 源代码还没有修改时的测试结果. grader 用它判断 agent 有没有让情况变好
     state: str                      # 给 agent 的'当前状态', 会写进任务消息
+    baseline_python: str = BASELINE_PYTHON  # 旧版本对比环境的 python (相对于工作区), compare_versions 用它
 
 
 def prepare_baseline(
@@ -101,6 +103,10 @@ def prepare(
     steps = _Steps(workspace.env, on_event)
     m = task.migration
     baseline = _baseline(steps, task, base_python, require_passing_baseline)
+    # 对比环境只装目标依赖的旧版本, 不装仓库和其他依赖: 实验要回答的是"库的行为变了没有", 和仓库的代码无关.
+    # 在冻结之前建好, 它和 .venv 一样会被加入 exclude
+    steps.run("baseline-venv", f'"{base_python}" -m venv {BASELINE_VENV_DIR}', INSTALL_TIMEOUT)
+    steps.install_version(m.package, m.from_version, python=f'"{BASELINE_PYTHON}"', step="baseline-pin")
 
     # 先提交依赖声明, 再装新版本: 提交里只有 edits 改的文件, harness 的改动不会被算成 agent 的
     steps.apply_edits(m.edits)
@@ -185,15 +191,17 @@ class _Steps:
 
     # ------------------------------------------------------------------ 安装
 
-    def install_version(self, package: str, version: str) -> None:
-        self.run(f"pin-{version}", f'python -m pip install "{package}=={version}"', INSTALL_TIMEOUT)
+    def install_version(self, package: str, version: str, python: str = "python", step: str = "") -> None:
+        """精确地装上一个版本. python: 装进哪个环境, 默认是工作区的 .venv (它在 PATH 的最前面)"""
+        step = step or f"pin-{version}"
+        self.run(step, f'{python} -m pip install "{package}=={version}"', INSTALL_TIMEOUT)
         # 装完再查一次实际的版本: pip 可能因为依赖冲突装上别的版本. 包名通过 sys.argv 传入, 代码里就不需要引号套引号
         installed = self.run(
-            f"pin-{version}-check",
-            f'python -c "import sys, importlib.metadata as m; print(m.version(sys.argv[1]))" {package}', 60,
+            f"{step}-check",
+            f'{python} -c "import sys, importlib.metadata as m; print(m.version(sys.argv[1]))" {package}', 60,
         ).output.strip()
         if installed != version:
-            raise PrepareError(f"pin-{version}", f"装上的 {package} 是 {installed}, 不是 {version}")
+            raise PrepareError(step, f"装上的 {package} 是 {installed}, 不是 {version}")
 
     # ------------------------------------------------------------------ 测试
 

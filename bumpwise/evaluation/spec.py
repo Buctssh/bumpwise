@@ -57,6 +57,7 @@ class ArmSpec(_Spec):
     max_turns: int | None = Field(None, ge=1)
     model: str | None = None                # 不写: 用配置 (.env) 里的模型
     memory: bool | None = None              # 用不用长期记忆 (V7). 不写: 不用
+    compare_versions: bool | None = None    # 给不给对比实验的工具 (V7). 不写: 给
 
     @field_validator("guards")
     @classmethod
@@ -83,7 +84,8 @@ class ArmSpec(_Spec):
     def to_agent_config(self) -> AgentConfig:
         """转成 runner 用的配置. 没写的字段用 AgentConfig 的默认值, 而不是在这里再写一遍默认值"""
         given = {k: v for k, v in (("system_prompt", self.system_prompt), ("token_budget", self.token_budget),
-                                   ("max_turns", self.max_turns), ("memory", self.memory)) if v is not None}
+                                   ("max_turns", self.max_turns), ("memory", self.memory),
+                                   ("compare_versions", self.compare_versions)) if v is not None}
         if self.guards is not None:
             given["guards"] = tuple(self.guards)
         return AgentConfig(name=self.name, **given)

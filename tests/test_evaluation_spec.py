@@ -22,6 +22,7 @@ name = "no-guards"
 guards = []
 system_prompt = "system_v2"
 token_budget = 1_000_000
+compare_versions = false
 '''
 
 
@@ -51,7 +52,7 @@ def test_load_experiment(tmp_path):
     assert spec.id == "demo" and list(tasks) == ["cortex-xdr-client-pydantic2"]
     assert spec.arm("standard").to_agent_config() == AgentConfig(name="standard")      # 不写的字段就是标准配置
     assert spec.arm("no-guards").to_agent_config() == AgentConfig(
-        name="no-guards", system_prompt="system_v2", guards=(), token_budget=1_000_000)
+        name="no-guards", system_prompt="system_v2", guards=(), token_budget=1_000_000, compare_versions=False)
 
 
 def test_plan_interleaves_arms_and_repeats(tmp_path):

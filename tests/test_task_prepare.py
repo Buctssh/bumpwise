@@ -5,7 +5,7 @@ import pytest
 from bumpwise.env import EnvironmentInfo, ExecResult, PathOutsideWorkdir
 from bumpwise.task import TaskSpec
 from bumpwise.task.prepare import PrepareError, TestOutcome, _summarize_tests, prepare, prepare_baseline
-from bumpwise.task.workspace import Workspace
+from bumpwise.task.workspace import BASELINE_PYTHON, BASELINE_VENV_DIR, Workspace
 
 BASE = "b" * 40
 UPGRADE_COMMIT = "c" * 40
@@ -334,3 +334,25 @@ def test_prepare_baseline_rejects_a_failing_baseline():
     with pytest.raises(PrepareError) as e:
         prepare_baseline(make_task(), Workspace(env=env, path=None, base_commit=BASE), "python")
     assert e.value.step == "baseline"
+
+
+# ---------------------------------------------------------------- 旧版本的对比环境 (V7, ADR-026)
+
+def test_baseline_environment_has_only_the_old_version():
+    env = FailingTestsAfterUpgrade()
+    prepared = run(env)
+    venv = index_of(env, f"-m venv {BASELINE_VENV_DIR}")
+    pin = index_of(env, f'"{BASELINE_PYTHON}" -m pip install "pydantic==1.10.26"')
+    # 在基线测试之后, 修改依赖声明之前建好, 冻结时和 .venv 一样加入 exclude
+    assert index_of(env, "pytest") < venv < pin < index_of(env, "git add") < index_of(env, "status --porcelain")
+    # 只装了目标依赖: 没有在对比环境里装仓库 (pip install -e .)
+    assert not any(BASELINE_VENV_DIR in c and "-e ." in c for c in env.commands)
+    assert prepared.baseline_python == BASELINE_PYTHON
+
+
+def test_baseline_environment_version_is_verified():
+    env = FailingTestsAfterUpgrade()
+    env.failures[f'"{BASELINE_PYTHON}" -c'] = ExecResult(exit_code=0, output="1.9.0\n", timed_out=False, duration_s=0.1)
+    with pytest.raises(PrepareError) as e:
+        run(env)
+    assert e.value.step == "baseline-pin" and "1.9.0" in str(e.value)

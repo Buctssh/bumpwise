@@ -31,6 +31,11 @@ from .spec import TaskSpec
 # 虚拟环境的位置由工作区决定: 这是"工作区的布局", 和怎样创建虚拟环境 (流水线) 是两回事
 VENV_DIR = ".venv"
 VENV_PYTHON = f"{VENV_DIR}/Scripts/python.exe" if sys.platform == "win32" else f"{VENV_DIR}/bin/python"
+# 旧版本的对比环境 (V7, ADR-026): 只装了旧版本的目标依赖, agent 用 compare_versions 在里面运行实验脚本.
+# 它会直接写进 cmd.exe 的命令里, 所以 Windows 上用反斜杠
+BASELINE_VENV_DIR = ".venv-baseline"
+BASELINE_PYTHON = (f"{BASELINE_VENV_DIR}\\Scripts\\python.exe" if sys.platform == "win32"
+                   else f"{BASELINE_VENV_DIR}/bin/python")
 
 _GIT_TIMEOUT = 600  # 第一次克隆大仓库可能比较慢
 
