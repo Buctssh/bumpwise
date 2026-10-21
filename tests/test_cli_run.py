@@ -359,3 +359,92 @@ def test_token_budget_must_be_positive(repo, fake_llm, capsys):
     fake_llm(reply("完成"))
     assert main(run_args(repo, "--token-budget", "0")) == 1
     assert "--token-budget 必须大于 0" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------- 长期记忆的参数 (V7): --memory, --learn, --validate
+
+@pytest.mark.parametrize("extra, message", [
+    (["--memory"], "只能和 --task 一起用"),
+    (["--learn"], "只能和 --task 一起用"),
+])
+def test_memory_flags_need_a_task(repo, fake_llm, capsys, extra, message):
+    fake_llm()
+    assert main(run_args(repo, *extra)) == 1 and message in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("extra, message", [
+    (["--validate"], "要和 --learn 一起用"),
+    (["--learn", "--no-grade"], "--learn 需要评分"),
+])
+def test_memory_flag_combinations(repo, fake_llm, tmp_path, capsys, extra, message):
+    # 在开始花钱之前就检查: 模型一次都不会被调用
+    llm = fake_llm()
+    assert main(["run", "--task", str(write_task_file(tmp_path, repo)), *extra]) == 1
+    assert message in capsys.readouterr().err and llm.systems == []
+
+
+def test_memory_flag_turns_on_memory(repo, fake_llm, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(runner_run, "prepare", fake_prepare)
+    fake_llm(reply("结论: 已完成"))
+    assert main(["run", "--task", str(write_task_file(tmp_path, repo)), "--memory", "--no-grade"]) == 0
+    meta = json.loads((only_run_dir(tmp_path) / "meta.json").read_text(encoding="utf-8"))
+    assert meta["agent"]["memory"] is True and meta["agent"]["name"] == "memory" and "memory" in meta
+
+
+class _Report:
+    def __init__(self, verdict):
+        self.verdict = verdict
+
+
+def outcome_with(verdict, tmp_path):
+    from types import SimpleNamespace
+    grade = SimpleNamespace(report=_Report(verdict)) if verdict else None
+    return SimpleNamespace(grade=grade, trace_dir=tmp_path / "runs" / "r1")
+
+
+def learn(monkeypatch, tmp_path, verdict, validate=False, created=("pydantic2-x",), passed=True):
+    from types import SimpleNamespace
+    calls = {"reflect": 0, "validate": []}
+
+    def fake_reflect(run_dir, llm, store_dir):
+        calls["reflect"] += 1
+        return SimpleNamespace(created=[SimpleNamespace(id=c, title="标题") for c in created], merged=[], rejected=[])
+
+    def fake_validate(card_id, **kwargs):
+        calls["validate"].append(card_id)
+        return SimpleNamespace(passed=passed, status_before="draft", status_after="validated" if passed else "draft", run_id="r2")
+
+    monkeypatch.setattr(cli_run, "reflect", fake_reflect)
+    monkeypatch.setattr(cli_run, "validate_card", fake_validate)
+    monkeypatch.setattr(cli_run, "create_llm_client", lambda s: None)
+    settings = Settings(provider="fake", api_format="anthropic", api_key=FAKE_KEY, base_url=None, model="m",
+                        runs_dir=tmp_path / "runs", workspace_dir=tmp_path / "ws", memories_dir=tmp_path / "memories")
+    from types import SimpleNamespace as NS
+    cli_run._learn(NS(validate=validate, base_python=None), settings, outcome_with(verdict, tmp_path), [])
+    return calls
+
+
+def test_learn_only_from_failures(monkeypatch, tmp_path, capsys):
+    # 只从失败里学: 通过了, 或者没有评分, 都不调用模型
+    assert learn(monkeypatch, tmp_path, "pass")["reflect"] == 0 and "评分通过了, 不做反思" in capsys.readouterr().out
+    assert learn(monkeypatch, tmp_path, None)["reflect"] == 0 and "没有评分" in capsys.readouterr().out
+    calls = learn(monkeypatch, tmp_path, "fail")
+    out = capsys.readouterr().out
+    assert calls == {"reflect": 1, "validate": []}
+    assert "新的草稿 pydantic2-x" in out and "python -m bumpwise memory validate pydantic2-x" in out
+
+
+def test_learn_and_validate(monkeypatch, tmp_path, capsys):
+    assert learn(monkeypatch, tmp_path, "fail", validate=True)["validate"] == ["pydantic2-x"]
+    assert "验证 pydantic2-x: 通过, draft → validated" in capsys.readouterr().out
+    # 验证没有通过: 保持草稿, 不自动重试, 交给人
+    assert learn(monkeypatch, tmp_path, "fail", validate=True, passed=False)["validate"] == ["pydantic2-x"]
+    assert "没有通过, 保持草稿, 需要人查看" in capsys.readouterr().out
+
+
+def test_help_lists_every_command(capsys):
+    assert main(["help"]) == 0
+    out = capsys.readouterr().out
+    for command in ("run", "eval run", "memory reflect", "memory label", "task check", "grade", "show"):
+        assert f"python -m bumpwise {command}\n" in out
+    assert "--validate" in out and "--memory" in out

@@ -2,6 +2,12 @@
     python -m bumpwise run --task tasks/xxx.toml                         照着题目运行 (创建工作区, 准备, 运行 agent, 评分)
     python -m bumpwise run --repo ... --package ... --target ...         在已经准备好的仓库上直接运行 agent (调试用)
 
+长期记忆 (V7, 只能和 --task 一起用):
+    --memory      使用已经验证过的经验卡片
+    --learn       评分没有通过, 而且是真实的题目时, 运行结束后做一次反思, 写出卡片的草稿 (调用一次模型)
+    --validate    和 --learn 一起用: 反思出的每张草稿, 马上在这道题上带着它重跑一次来验证 (每张一次完整的运行, 要花钱)
+只从失败里学: 通过了的运行没有"哪里错了"的信号, 写出来的经验没有证据, 也无法验证.
+
 这里只负责和人打交道: 解析参数, 读取配置, 创建模型客户端, 在终端上显示进度, 决定退出码.
 一次运行怎么编排 (准备, agent 循环, 运行记录) 在 runner/ 里, 以后的批量评测 (V6) 也直接调用它.
 """
@@ -17,8 +23,10 @@ from ..config import Settings
 from ..env import LocalEnvironment
 from ..harness.loop import Status, best_effort
 from ..harness.trace import load_meta
+from ..learning import ReflectError, ValidateError, reflect, validate_card
+from ..learning.reflect import REFLECT_MAX_TOKENS
 from ..llm import create_llm_client
-from ..runner import PREPARE_FAILED, AgentTask, RunOutcome, RunnerError, run_repo, run_task
+from ..runner import PREPARE_FAILED, AgentConfig, AgentTask, RunOutcome, RunnerError, run_repo, run_task
 from ..runner.record import GIT_STATUS, git
 from ..task import TaskError, load_task
 from ..task.workspace import LocalWorkspaceProvider
@@ -64,6 +72,11 @@ def add_parser(commands: argparse._SubParsersAction) -> None:
     task = run.add_argument_group("--task 的参数")
     task.add_argument("--base-python", help=BASE_PYTHON_HELP)
     task.add_argument("--no-grade", action="store_true", help="agent 结束后不评分 (省掉准备旧版本环境的时间), 之后可以用 grade 命令补上")
+    task.add_argument("--memory", action="store_true", help="使用已经验证过的经验卡片 (V7)")
+    task.add_argument("--learn", action="store_true",
+                      help="评分没有通过, 而且是真实的题目时, 结束后做一次反思, 写出卡片的草稿 (调用一次模型, 几万 tokens)")
+    task.add_argument("--validate", action="store_true",
+                      help="和 --learn 一起用: 马上验证反思出的草稿 (每张一次完整的运行, 要花钱)")
 
     repo = run.add_argument_group("--repo 的参数")
     repo.add_argument("--package", help="要迁移的依赖, 例如 pydantic (--repo 时必填)")
@@ -75,6 +88,7 @@ def add_parser(commands: argparse._SubParsersAction) -> None:
 
 
 def execute(args: argparse.Namespace) -> int:
+    _check_memory_flags(args)
     settings = _load_settings(args)
     print(LOCAL_ENV_WARNING)
     # 终端打印只是尽力而为: 出错只提示一次, 不影响运行. trace 由 runner 自己负责
@@ -84,7 +98,22 @@ def execute(args: argparse.Namespace) -> int:
     except RunnerError as e:
         raise SetupError(str(e)) from None
     _print_summary(outcome)
+    if args.task and args.learn:
+        _learn(args, settings, outcome, observers)
+    # 退出码只反映这次运行本身: 反思和验证是之后的事, 它们的结果打印出来, 写进卡片
     return EXIT_CODES[outcome.status]
+
+
+def _check_memory_flags(args: argparse.Namespace) -> None:
+    """参数之间的约束, argparse 表达不了, 在开始花钱之前检查"""
+    memory = getattr(args, "memory", False) or getattr(args, "learn", False) or getattr(args, "validate", False)
+    if args.repo and memory:
+        # 选择经验要知道依赖的新旧版本, 反思要有评分 (隐藏测试的报错): --repo 方式的运行都没有
+        raise SetupError("--memory, --learn, --validate 只能和 --task 一起用")
+    if args.task and args.validate and not args.learn:
+        raise SetupError("--validate 要和 --learn 一起用: 验证的是这次反思写出的草稿. 验证已有的草稿用 memory validate")
+    if args.task and args.learn and args.no_grade:
+        raise SetupError("--learn 需要评分: 反思要看评分没有通过的检查, 不能和 --no-grade 一起用")
 
 
 # ============================================================================ 两种运行方式
@@ -102,7 +131,53 @@ def _run_task(args: argparse.Namespace, settings: Settings, observers) -> RunOut
         base_python=default_base_python(args.base_python),
         observers=observers,
         grade=not args.no_grade,
+        agent=AgentConfig(name="memory" if args.memory else "default", memory=args.memory),
     )
+
+
+def _learn(args: argparse.Namespace, settings: Settings, outcome: RunOutcome, observers) -> None:
+    """--learn 和 --validate: 从这次运行的失败里提炼经验, 并且 (可选) 马上验证"""
+    print("\n" + "=" * 60)
+    report = outcome.grade.report if outcome.grade is not None else None
+    if report is None:
+        print("学习: 这次运行没有评分 (agent 没有正常结束, 或者评分出错), 不做反思")
+        return
+    if report.verdict == "pass":
+        print("学习: 评分通过了, 不做反思 (只从失败里学)")
+        return
+    # 反思的输出更长 (thinking 也算在上限里), 用单独的上限; 构造的题目由 reflect 拒绝 (ADR-027)
+    llm = create_llm_client(dataclasses.replace(settings, max_tokens=REFLECT_MAX_TOKENS))
+    try:
+        result = reflect(outcome.trace_dir, llm, store_dir=settings.memories_dir)
+    except ReflectError as e:
+        print(f"学习: 不做反思: {e}")
+        return
+    for card in result.created:
+        print(f"学习: 新的草稿 {card.id}  {card.title}")
+    for card in result.merged:
+        print(f"学习: 合并进已有的卡片 {card.id} (证据累加)")
+    for data, problems in result.rejected:
+        print(f"学习: 退回 {data.get('id', '?')}: {'; '.join(problems)}")
+    if not (result.created or result.merged or result.rejected):
+        print("学习: 这次运行没有值得提炼的经验")
+    if not args.validate:
+        if result.created:
+            print("验证草稿 (要花钱): " + "; ".join(f"python -m bumpwise memory validate {c.id}" for c in result.created))
+        return
+    for card in result.created:
+        print(f"\n验证 {card.id}: 带着它在这道题上重跑一次")
+        try:
+            validation = validate_card(card.id, settings=settings, llm=create_llm_client(settings),
+                                       provider=LocalWorkspaceProvider(settings.workspace_dir),
+                                       base_python=default_base_python(args.base_python), observers=observers)
+        except ValidateError as e:
+            print(f"验证 {card.id}: 没有运行: {e}")
+            continue
+        if validation.passed:
+            print(f"验证 {card.id}: 通过, {validation.status_before} → {validation.status_after} (运行 {validation.run_id})")
+        else:
+            # 不自动重试: 每次重试都是一次完整的运行. 由人看 trace, 决定废弃, 修改, 或者改进反思 (ADR-024)
+            print(f"验证 {card.id}: 没有通过, 保持草稿, 需要人查看: python -m bumpwise show runs/{validation.run_id}")
 
 
 def default_base_python(arg: str | None) -> str:
