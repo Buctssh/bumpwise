@@ -1,0 +1,21 @@
+id = "pydantic2-config-alias-populate-by-name"
+package = "pydantic"
+from_major = 1
+to_major = 2
+status = "draft"
+title = "换成 ConfigDict 时丢了按字段名填充/别名配置"
+applies_when = "模型字段带 alias（线上名与 Python 名不同），且 v1 在 class Config 里用 allow_population_by_field_name 或 fields 别名映射允许按 Python 名传值。"
+symptom = "按 Python 名构造的对象能通过校验，但 model_dump(by_alias=True) 输出的仍是 Python 名而非线上名；反向传入线上名时按字段名填充失效（允许额外字段的模型会静默把值收进 extra，不允许的直接报字段缺失）。"
+why_tests_miss = "v1 里按字段名填充是默认放开的，用 Python 名构造的测试全部照旧通过，只有同时断言“按别名序列化”和“两种名字都能输入”才会暴露。"
+fix = "别名写在字段上 Field(alias=...)，并在 model_config = ConfigDict(populate_by_name=True)（pydantic 2.0+；2.11 起也可用 validate_by_name=True / validate_by_alias=True）里恢复按字段名填充；原 Config.fields 的别名映射要搬到字段的 Field(alias=...)。"
+verify = "写几行脚本定义含 alias 字段的模型，用 Python 名和 alias 各构造一次，打印 model_dump(by_alias=True)；再去掉 populate_by_name 对比输出差异。"
+
+[trigger]
+pattern = "class\\s+Config\\b|allow_population_by_field_name|fields\\s*=\\s*\\{|alias\\s*="
+
+[evidence]
+learned_from = ["cortex-xdr-client-pydantic2"]
+source_runs = ["20261020-162442-cortex-xdr-client-pydantic2-6142"]
+check = "hidden_tests"
+author = "model"
+validation_runs = []
