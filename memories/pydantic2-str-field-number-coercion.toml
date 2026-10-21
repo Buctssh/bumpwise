@@ -1,0 +1,21 @@
+id = "pydantic2-str-field-number-coercion"
+package = "pydantic"
+from_major = 1
+to_major = 2
+status = "draft"
+title = "str 字段收到数字: v1 转成字符串, v2 报错"
+applies_when = "模型里声明了 str（或 Optional[str]）类型字段，而输入值可能来自 YAML/JSON 等外部数据中未加引号的数字（如 1.0、42）"
+symptom = "v1 的 str 字段在非 strict 模式下接受 int/float 并调用 str() 转换（1.0 变 '1.0'，42 变 '42'），校验通过；v2 默认不再把数字转成字符串，直接报 string_type（Input should be a valid string），整份配置校验失败"
+why_tests_miss = "原有测试通常只传带引号的字符串，或直接在 Python 里构造 str；只有 YAML/JSON 里某个本该是文本的字段写成裸数字时才触发，仓库里静态搜索没找到这种值不等于用户数据里没有"
+fix = "若要保留 v1 行为，在模型配置里加 ConfigDict(coerce_numbers_to_str=True)（pydantic 2 提供；若所用 2.x 小版本不支持该选项，则给这些字段加 field_validator(mode=\"before\") 把 int/float 转成 str）；若接受新行为，需把输入数据里这些字段改成带引号的字符串并确认调用方不再传数字"
+verify = "from pydantic import BaseModel\nclass M(BaseModel):\n    a: str\nfor v in (1.0, 42, \"7\"):\n    try:\n        print(repr(v), '->', repr(M(a=v).a))\n    except Exception as e:\n        print(repr(v), '-> error:', type(e).__name__)"
+
+[trigger]
+pattern = "^\\s*[A-Za-z_]\\w*\\s*:\\s*(?:Optional\\[\\s*str\\s*\\]|str\\b)"
+
+[evidence]
+learned_from = ["pyrolab-pydantic2"]
+source_runs = ["20261021-184533-pyrolab-pydantic2-e76a"]
+check = "hidden_tests"
+author = "model"
+validation_runs = []
