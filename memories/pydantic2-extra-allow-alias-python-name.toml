@@ -2,7 +2,7 @@ id = "pydantic2-extra-allow-alias-python-name"
 package = "pydantic"
 from_major = 1
 to_major = 2
-status = "draft"
+status = "validated"
 title = "extra='allow' 下用字段名填别名字段, v2 落到额外字段"
 applies_when = "模型在 v1 类式 `class Config` 里设了 `extra = 'allow'`，并且有带 `Field(..., alias=...)` 的字段（线上名与 Python 名不同）；这种模型在 v1 里用 Python 字段名传值也能填进字段本身。"
 symptom = "v1 下按 Python 字段名传入别名字段时，该额外键与字段名同名、覆盖了字段值，所以字段真的有值，`dict(by_alias=True)` 输出线上别名；v2 下该值进了 `__pydantic_extra__`，声明的字段仍是默认 None，`model_dump(by_alias=True)` 输出的是 Python 字段名，线上名与值都不见了。"
@@ -18,4 +18,4 @@ learned_from = ["cortex-xdr-client-pydantic2"]
 source_runs = ["20261020-162442-cortex-xdr-client-pydantic2-6142"]
 check = "hidden_tests"
 author = "model"
-validation_runs = []
+validation_runs = ["20261021-132642-cortex-xdr-client-pydantic2-2e30"]
