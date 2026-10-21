@@ -132,9 +132,10 @@ def _experience(groups: dict[str, list[RunRecord]]) -> list[str]:
     if not cards:
         return []
     out = ["## 经验", "",
-           "每张卡片在这些运行里: 可以用, 触发条件匹配上, 推送, 查看, 去掉了几次. \"用到了\": 推送过或者查看过, 并且没有被去掉.", "",
-           "| 卡片 | 可以用 | 匹配上 | 推送 | 查看 | 去掉 | 用到了时的通过率 | 没用到时的通过率 |",
-           "|---|---|---|---|---|---|---|---|"]
+           "每张卡片在这些运行里: 可以用, 触发条件匹配上, 推送, 查看, 确认采用, 去掉, 交给了 agent 却没有处理的次数. "
+           "\"用到了\": 推送过或者查看过, 并且没有被去掉.", "",
+           "| 卡片 | 可以用 | 匹配上 | 推送 | 查看 | 确认 | 去掉 | 未处理 | 用到了时的通过率 | 没用到时的通过率 |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
     alerts = []
     for card in cards:
         available = [r for r in records if card in r.memory.get("available", [])]
@@ -142,15 +143,28 @@ def _experience(groups: dict[str, list[RunRecord]]) -> list[str]:
         used = [r for r in available if r not in dismissed
                 and (card in r.memory.get("pushed", []) or card in r.memory.get("recalled", []))]
         unused = [r for r in available if r not in used]
+        confirmed = [r for r in available if card in r.memory.get("confirmed", {})]
+        unresolved = [r for r in available if card in r.memory.get("unresolved", [])]
         out.append(f"| {card} | {len(available)} | {sum(card in r.memory.get('matched', {}) for r in available)} "
                    f"| {sum(card in r.memory.get('pushed', []) for r in available)} "
-                   f"| {sum(card in r.memory.get('recalled', []) for r in available)} | {len(dismissed)} "
+                   f"| {sum(card in r.memory.get('recalled', []) for r in available)} | {len(confirmed)} | {len(dismissed)} "
+                   f"| {len(unresolved)} "
                    f"| {pass_rate(used)[0]} | {pass_rate(unused)[0]} |")
         # 最危险的信号: agent 去掉了一条经验, 而这次运行最后没有通过. 它可能判断错了, 这条经验其实是对的
         for r in dismissed:
             if outcome(r) == FAIL:
                 reason = r.memory["dismissed"][card].get("reason", "")
                 alerts.append(f"{card} 在 {r.run_id} 里被去掉了 (理由: {reason}), 而这次运行没有通过评分. agent 可能判断错了, 请人查看")
+        # 没有处理: agent 可能在报告里用文字拒绝了它 (第一次验证就是这样, docs/v7/validation-001.md), 统计里看不到
+        for r in unresolved:
+            if outcome(r) == FAIL:
+                alerts.append(f"{card} 在 {r.run_id} 里交给了 agent, 但它既没有确认也没有去掉, 而这次运行没有通过评分. "
+                              "请人查看报告里怎样说它")
+        # 确认采用了, 还是没有通过: 卡片的做法可能不对或者不完整
+        for r in confirmed:
+            if outcome(r) == FAIL:
+                action = r.memory["confirmed"][card].get("action", "")
+                alerts.append(f"{card} 在 {r.run_id} 里被确认采用了 (处理: {action}), 而这次运行没有通过评分. 卡片的做法可能不对, 请人查看")
     if alerts:
         out += ["", "### 需要人查看", "", *[f"- {a}" for a in alerts]]
     return out + [""]

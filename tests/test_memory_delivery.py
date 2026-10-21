@@ -105,7 +105,21 @@ def test_summary():
     s.push_for("cortex/models/ioc.py")
     assert s.summary() == {"available": ["alias", "config", "unmatched"],
                            "matched": {"alias": ["cortex/models/ioc.py"], "config": ["cortex/models/a.py"]},
-                           "pushed": ["alias"], "recalled": [], "dismissed": {}}
+                           "pushed": ["alias"], "recalled": [], "dismissed": {},
+                           "confirmed": {}, "unresolved": ["alias", "config"]}
+
+
+def test_unresolved_covers_matched_and_recalled_cards():
+    # 交给过 agent 的卡片: 匹配上的, 加上它自己查看过的 (哪怕没有匹配上). 确认或者去掉之后就不算未处理
+    s = session()
+    s.recall("unmatched")
+    assert s.unresolved() == ["alias", "config", "unmatched"]
+    s.record_command("python probe.py", "ok")
+    assert s.confirm("alias", "加了 populate_by_name", "python probe.py") is None
+    assert s.dismiss("config", "无关", "python probe.py") is None
+    assert s.unresolved() == ["unmatched"]
+    assert [c.id for c in s.checklist()] == ["unmatched"]
+    assert s.push_for("cortex/models/ioc.py") == []         # 确认过的不再推送
 
 
 # ---------------------------------------------------------------- 推送的护栏
@@ -154,3 +168,23 @@ def test_no_checklist_when_every_card_was_dismissed():
     guard = ExperienceGuard(s, TEST)
     guard.after_call(run_tests("210 passed", 0))
     assert guard.before_turn(6, 40) is None
+
+
+def test_compare_versions_counts_as_evidence():
+    # 对比实验记成 "compare_versions <路径>", 和工具说明里的写法一致, 可以作为确认或者去掉的证据
+    s = session()
+    guard = ExperienceGuard(s, TEST, compare_versions=True)
+    guard.after_call(CallOutcome(ToolCall(7, "compare_versions", {"path": ".bumpwise/p.py"}), "## 旧版本 ...", False))
+    assert s.confirm("alias", "改了", "compare_versions .bumpwise/p.py") is None
+    # 出错的调用 (比如参数不合法) 不算
+    guard.after_call(CallOutcome(ToolCall(8, "compare_versions", {"path": "bad"}), "参数不合法", True))
+    assert s.dismiss("config", "无关", "compare_versions bad") is not None
+
+
+@pytest.mark.parametrize("available", [True, False])
+def test_checklist_asks_for_a_decision_and_mentions_compare_only_when_available(available):
+    guard = ExperienceGuard(session(), TEST, compare_versions=available)
+    guard.after_call(run_tests("210 passed", 0))
+    notice = guard.before_turn(6, 40)
+    assert "confirm_experience 或者 dismiss_experience" in notice
+    assert ("compare_versions" in notice) == available

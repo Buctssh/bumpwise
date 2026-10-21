@@ -25,7 +25,7 @@ def call(session, tool: str, **args):
 
 def test_registry_only_has_experience_tools_when_asked():
     assert "list_experience" not in build_default_registry().names
-    assert {"list_experience", "recall_experience", "dismiss_experience"} <= set(build_default_registry(experience=True).names)
+    assert {"list_experience", "recall_experience", "confirm_experience", "dismiss_experience"} <= set(build_default_registry(experience=True).names)
 
 
 def test_list_shows_every_card_with_its_state(session):
@@ -69,3 +69,21 @@ def test_tools_without_a_session_report_an_error():
     ctx = ToolContext(env=None, command_timeout=30, max_output_chars=20_000)
     result = build_default_registry(experience=True).execute("list_experience", {}, ctx)
     assert result.is_error and "没有启用经验" in result.content
+
+
+def test_confirm_needs_a_command_that_was_executed(session):
+    refused = call(session, "confirm_experience", id="alias", action="加了配置", evidence_command="python never.py")
+    assert refused.is_error and "没有执行过" in refused.content and "alias" not in session.confirmed
+    session.record_command("python .bumpwise/probe.py", "旧版本: 100 新版本: None")
+    ok = call(session, "confirm_experience", id="alias", action="三个模型加了 populate_by_name",
+              evidence_command="python .bumpwise/probe.py")
+    assert not ok.is_error and session.confirmed["alias"]["action"] == "三个模型加了 populate_by_name"
+    assert session.checklist() == [] and "[已确认采用]" in call(session, "list_experience").content
+
+
+def test_changing_mind_keeps_only_the_last_decision(session):
+    # 先去掉, 做了对比实验以后又确认: 以最后一次为准, 统计里不会同时出现在两边
+    session.record_command("pytest", "ok")
+    call(session, "dismiss_experience", id="alias", reason="无关", evidence_command="pytest")
+    call(session, "confirm_experience", id="alias", action="其实适用", evidence_command="pytest")
+    assert "alias" in session.confirmed and "alias" not in session.dismissed

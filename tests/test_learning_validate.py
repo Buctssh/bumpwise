@@ -135,9 +135,25 @@ def test_report_shows_card_stats_and_alerts():
         dataclasses.replace(BASE, run_id="r4", arm="none"),
     ]
     text = build_report(records, "报告")
-    assert "| alias | 2 | 2 | 1 | 0 | 1 | 1/1 = 100%" in text
+    # 可以用 2, 匹配上 2, 推送 1, 查看 0, 确认 0, 去掉 1, 未处理 0 (旧的记录没有 unresolved 字段)
+    assert "| alias | 2 | 2 | 1 | 0 | 0 | 1 | 0 | 1/1 = 100%" in text
     assert "### 需要人查看" in text and "alias 在 r2 里被去掉了 (理由: 无关), 而这次运行没有通过评分" in text
     assert "1 次运行是验证经验用的" in text
+
+
+def test_report_alerts_on_unresolved_and_confirmed_failures():
+    # 第一次验证: agent 在报告里写"不适用", 没有调用工具. 这种情况要单独告警 (docs/v7/validation-001.md)
+    records = [
+        dataclasses.replace(BASE, run_id="r1", verdict="fail", memory=mem(pushed=["alias"], unresolved=["alias"])),
+        dataclasses.replace(BASE, run_id="r2", verdict="fail", memory=mem(
+            pushed=["alias"], confirmed={"alias": {"action": "加了 populate_by_name", "command": "x", "output": ""}})),
+        dataclasses.replace(BASE, run_id="r3", memory=mem(pushed=["alias"], unresolved=["alias"])),   # 通过了: 不告警
+    ]
+    text = build_report(records, "报告")
+    assert "| alias | 3 | 3 | 3 | 0 | 1 | 0 | 2 |" in text
+    assert "alias 在 r1 里交给了 agent, 但它既没有确认也没有去掉" in text
+    assert "alias 在 r2 里被确认采用了 (处理: 加了 populate_by_name)" in text
+    assert "r3 里交给了" not in text
 
 
 def test_no_memory_section_without_memory():

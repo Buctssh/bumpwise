@@ -114,8 +114,8 @@ def test_matched_card_is_listed_and_pushed(settings, remote, monkeypatch):
     llm = FakeLLM(read("pkg/models.py"), reply())
     outcome, meta, task_message = run(settings, remote, llm, monkeypatch)
 
-    # 任务消息里有目录 (task_v2), 只有一行
-    assert meta["prompts"]["task"]["name"] == "task_v2"
+    # 任务消息里有目录 (task_v3), 只有一行
+    assert meta["prompts"]["task"]["name"] == "task_v3"
     assert "- [alias-card] 带别名的字段, v2 默认不能用字段名赋值" in task_message
     # agent 读到匹配上的文件时, 完整的内容附在结果后面
     result = llm.calls[1][-1]["content"][0]["content"]
@@ -187,3 +187,22 @@ def test_experience_tools_are_registered_only_with_candidates(settings, remote, 
     add_card(settings)
     run(settings, remote, Spy(reply()), monkeypatch)                     # 有可以用的卡片
     assert "list_experience" not in seen[0] and {"list_experience", "recall_experience", "dismiss_experience"} <= seen[1]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_compare_versions_follows_the_agent_config(settings, remote, monkeypatch, enabled):
+    # 经过准备流水线的运行有旧版本的对比环境 (ADR-026); 对照组可以关掉它, 用来做消融
+    seen: list = []
+
+    class Spy(FakeLLM):
+        def create(self, system, tools, messages, tool_choice="auto"):
+            seen.append({t["name"] for t in tools})
+            return super().create(system, tools, messages, tool_choice)
+
+    monkeypatch.setattr(runner_run, "prepare", fake_prepare)
+    outcome = run_task(make_task(remote), settings=settings, llm=Spy(reply()), provider=LocalWorkspaceProvider(settings.workspace_dir),
+                       base_python="python", agent=AgentConfig(compare_versions=enabled), grade=False)
+    meta = json.loads((outcome.trace_dir / "meta.json").read_text(encoding="utf-8"))
+    assert ("compare_versions" in seen[0]) == enabled
+    assert meta["prepare"]["baseline_python"].startswith(".venv-baseline")
+    assert meta["agent"]["compare_versions"] is enabled
