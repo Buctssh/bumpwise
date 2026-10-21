@@ -18,4 +18,4 @@ learned_from = ["cortex-xdr-client-pydantic2"]
 source_runs = ["20261020-162442-cortex-xdr-client-pydantic2-6142"]
 check = "hidden_tests"
 author = "model"
-validation_runs = []
+validation_runs = ["20261021-123550-cortex-xdr-client-pydantic2-fb76"]
