@@ -1,7 +1,9 @@
 """一次运行里的经验: 哪些卡片可以用, 哪些匹配上了, 推送过哪些, 查看过哪些, 去掉了哪些.
 
-推送 (harness 的 ExperienceGuard) 和自己查 (模块 4 的工具) 共用同一个对象. 运行结束时, runner 把 summary() 写进 meta:
+推送 (harness 的 ExperienceGuard) 和自己查 (tools/experience.py 的工具) 共用同一个对象. 运行结束时, runner 把 summary() 写进 meta:
 每张卡片的统计 (推送, 查看, 去掉了几次, 用了以后结果怎样) 都从运行记录里算出来, 不写回卡片 (ADR-024).
+
+已知的局限: 这些状态没有放进 loop 的 _Run, 不符合"状态外置"的原则. 以后要从检查点恢复运行时, 要把它也一起恢复.
 """
 from __future__ import annotations
 
@@ -11,6 +13,9 @@ from typing import Any
 
 from .card import Card
 
+# 去掉一张卡片时, 记下证据 (验证命令的输出) 的最后多少个字符: 够人事后判断这个验证是不是有效, 又不会让 meta 太大
+_EVIDENCE_CHARS = 1000
+
 
 @dataclass
 class ExperienceSession:
@@ -19,7 +24,10 @@ class ExperienceSession:
     matched: dict[str, list[str]]
     pushed: list[str] = field(default_factory=list)
     recalled: list[str] = field(default_factory=list)
-    dismissed: dict[str, str] = field(default_factory=dict)     # 卡片 id → 去掉的理由
+    # 卡片 id → {理由, 作为证据的命令, 这条命令的输出}
+    dismissed: dict[str, dict[str, str]] = field(default_factory=dict)
+    # 这次运行里执行过的命令 → 输出 (最后的部分). 由护栏记录, 去掉卡片时用来核对证据
+    executed: dict[str, str] = field(default_factory=dict)
 
     def index(self) -> str:
         """开始时放进任务消息的目录: 匹配上的卡片, 每张一行. 没有匹配上的卡片时是空字符串"""
@@ -42,9 +50,47 @@ class ExperienceSession:
         """测试全部通过时要提醒的卡片: 匹配上的, 没有被去掉的. 推送过的也要提醒: 推送时 agent 可能还没顾上处理"""
         return [self.cards[card_id] for card_id in self.matched if card_id not in self.dismissed]
 
+    def listing(self) -> str:
+        """全部可以用的经验, 每条一行, 带上它在这次运行里的状态. 包括没有匹配上的: 触发条件可能漏掉了"""
+        lines = []
+        for card_id, card in self.cards.items():
+            state = ("已去掉" if card_id in self.dismissed else "已推送" if card_id in self.pushed
+                     else "和这个仓库的代码匹配上了" if card_id in self.matched else "没有匹配上")
+            lines.append(f"{card.index_line()} [{state}]")
+        return "\n".join(lines)
+
+    def recall(self, card_id: str) -> Card | None:
+        """agent 自己查看一张卡片. 不存在时返回 None"""
+        card = self.cards.get(card_id)
+        if card is not None and card_id not in self.recalled:
+            self.recalled.append(card_id)
+        return card
+
+    def record_command(self, command: str, output: str) -> None:
+        self.executed[command] = output[-_EVIDENCE_CHARS:]
+
+    def dismiss(self, card_id: str, reason: str, evidence_command: str) -> str | None:
+        """去掉一张卡片: 之后不再推送, 测试通过时也不再提醒. 返回 None 表示成功, 否则是拒绝的理由 (直接交给模型).
+
+        必须附上一条这次运行里执行过的命令作为证据: 只说"我觉得无关"会被拒绝.
+        理由是 003 第 11 轮: 模型认为"Field(None, alias='class') 照样能用", 它最自信的地方, 恰恰是它错了的地方 (ADR-024)
+        """
+        if card_id not in self.cards:
+            return f"没有这条经验: {card_id}. 用 list_experience 查看可以用的经验"
+        if card_id in self.dismissed:
+            return None     # 已经去掉了: 重复调用不报错 (幂等)
+        output = self.executed.get(evidence_command.strip())
+        if output is None:
+            return (f"这条命令在这次运行里没有执行过: {evidence_command!r}. 先按这条经验的\"怎样验证\"执行验证, "
+                    "再把执行过的那条命令 (原样) 作为证据")
+        self.dismissed[card_id] = {"reason": reason, "command": evidence_command.strip(), "output": output}
+        return None
+
     def summary(self) -> dict[str, Any]:
+        # 写进 meta: 统计每张卡片时, 用的就是这几个字段. executed 不写进去: 它只用来核对证据, 命令本身都在 trace 里
         return {"available": sorted(self.cards), "matched": {k: list(v) for k, v in self.matched.items()},
-                "pushed": list(self.pushed), "recalled": list(self.recalled), "dismissed": dict(self.dismissed)}
+                "pushed": list(self.pushed), "recalled": list(self.recalled),
+                "dismissed": {k: dict(v) for k, v in self.dismissed.items()}}
 
 
 def _normalize(path: str) -> str:
