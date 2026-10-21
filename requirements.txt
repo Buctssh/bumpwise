@@ -1,0 +1,6 @@
+# Bumpwise 自己的依赖 (目标仓库的依赖装在它们各自的虚拟环境里, 由准备流水线负责)
+anthropic>=1.13,<2
+pydantic>=2.11,<3
+python-dotenv>=1.0,<2
+# 测试
+pytest>=8,<10
