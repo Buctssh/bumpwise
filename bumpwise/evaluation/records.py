@@ -44,6 +44,8 @@ class RunRecord:
     duration_s: float | None    # 从开始到结束用了多少秒, 没有结束时间 (比如进程被强制终止) 时为 None
     # 这次运行的经验 (V7): 版本号, 可以用的, 匹配上的, 推送, 查看, 去掉了哪些. 没有启用记忆时为 None
     memory: dict[str, Any] | None = None
+    # 这道题包含的已知行为变化 (ADR-027, 题目的 evaluation.pitfalls): 判断一张卡片和这次运行相关不相关
+    pitfalls: tuple[str, ...] = ()
 
 
 def load_record(run_dir: Path) -> RunRecord:
@@ -80,6 +82,7 @@ def load_record(run_dir: Path) -> RunRecord:
         prompt=f"{system['name']} {system.get('sha256', '')[:12]}" if system.get("name") else "?",
         duration_s=_duration(meta),
         memory=meta.get("memory"),
+        pitfalls=tuple((task.get("evaluation") or {}).get("pitfalls", [])),
     )
 
 

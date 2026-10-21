@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from .records import RunRecord
 from .stats import FAIL, INVALID, PASS, UNGRADED, Summary, compare, mean_pass_at_k, outcome, pass_rate, summarize
@@ -22,7 +22,9 @@ GROUP_BY: dict[str, Callable[[RunRecord], str]] = {
 SMALL_SAMPLE = 10
 
 
-def build_report(records: Sequence[RunRecord], title: str, group_by: str = "arm", notes: Sequence[str] = ()) -> str:
+def build_report(records: Sequence[RunRecord], title: str, group_by: str = "arm", notes: Sequence[str] = (),
+                 card_labels: Mapping[str, str] | None = None) -> str:
+    """card_labels: 卡片 id → 人标注的行为变化 (evidence.pitfall). 有它才能按标准答案判断记忆的行为 (ADR-027)"""
     key = GROUP_BY[group_by]
     groups: dict[str, list[RunRecord]] = {}
     for record in records:
@@ -35,6 +37,7 @@ def build_report(records: Sequence[RunRecord], title: str, group_by: str = "arm"
     out += _per_task(groups)
     out += _checks(groups)
     out += _experience(groups)
+    out += _memory_judgement(records, card_labels or {})
     out += _runs(records, key)
     return "\n".join(out).rstrip() + "\n"
 
@@ -167,6 +170,57 @@ def _experience(groups: dict[str, list[RunRecord]]) -> list[str]:
                 alerts.append(f"{card} 在 {r.run_id} 里被确认采用了 (处理: {action}), 而这次运行没有通过评分. 卡片的做法可能不对, 请人查看")
     if alerts:
         out += ["", "### 需要人查看", "", *[f"- {a}" for a in alerts]]
+    return out + [""]
+
+
+def _memory_judgement(records: Sequence[RunRecord], labels: Mapping[str, str]) -> list[str]:
+    """按标准答案判断记忆的行为 (ADR-027). 每一次 (运行, 交给了 agent 的卡片): 卡片说的行为变化在不在这道题里?
+    相关的应该确认, 不相关的应该去掉. 还有"漏推": 卡片和这道题相关, 却没有匹配上, agent 也没有自己查看.
+    验证用的运行不算; 没有标注的卡片单独列出, 不计入正确率"""
+    records = [r for r in records if r.memory and not r.memory.get("forced") and r.pitfalls]
+    cards = sorted({c for r in records for c in r.memory.get("available", [])})
+    if not records or not cards:
+        return []
+    rows, unlabeled = [], [c for c in cards if not labels.get(c)]
+    totals = {"pushed": 0, "pushed_relevant": 0, "decided": 0, "correct": 0, "missed": 0, "relevant": 0}
+    for card in cards:
+        if not labels.get(card):
+            continue
+        cell = {(rel, d): 0 for rel in (True, False) for d in ("确认", "去掉", "未处理")}
+        missed = 0
+        for r in records:
+            if card not in r.memory.get("available", []):
+                continue
+            relevant = labels[card] in r.pitfalls
+            given = card in r.memory.get("matched", {}) or card in r.memory.get("recalled", [])
+            totals["relevant"] += relevant
+            if not given:
+                missed += relevant
+                continue
+            decision = ("确认" if card in r.memory.get("confirmed", {}) else
+                        "去掉" if card in r.memory.get("dismissed", {}) else "未处理")
+            cell[(relevant, decision)] += 1
+            totals["pushed"] += 1
+            totals["pushed_relevant"] += relevant
+            if decision != "未处理":
+                totals["decided"] += 1
+                totals["correct"] += (decision == "确认") == relevant
+        totals["missed"] += missed
+        rows.append(f"| {card} | {labels[card]} | " + " | ".join(str(cell[(True, d)]) for d in ("确认", "去掉", "未处理"))
+                    + " | " + " | ".join(str(cell[(False, d)]) for d in ("确认", "去掉", "未处理")) + f" | {missed} |")
+    out = ["## 记忆的判断 (按标准答案)", "",
+           "每张卡片交给 agent 的运行, 按卡片说的行为变化在不在这道题里分成两类: 相关的应该确认, 不相关的应该去掉. "
+           "\"漏推\": 卡片和这道题相关, 却没有交给 agent.", "",
+           "| 卡片 | 行为变化 | 相关: 确认 | 相关: 去掉 | 相关: 未处理 | 不相关: 确认 | 不相关: 去掉 | 不相关: 未处理 | 漏推 |",
+           "|---|---|---|---|---|---|---|---|---|", *rows, ""]
+    if totals["pushed"]:
+        out.append(f"- 交给 agent 的卡片里, 和题目相关的: {totals['pushed_relevant']}/{totals['pushed']}")
+    if totals["decided"]:
+        out.append(f"- agent 做了决定的里面, 判断正确的: {totals['correct']}/{totals['decided']}")
+    if totals["relevant"]:
+        out.append(f"- 相关的 (运行, 卡片) 里, 没有交给 agent 的 (漏推): {totals['missed']}/{totals['relevant']}")
+    if unlabeled:
+        out.append(f"- 没有标注行为变化的卡片, 不计入上面的统计 (用 memory label 标注): {', '.join(unlabeled)}")
     return out + [""]
 
 

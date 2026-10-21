@@ -21,6 +21,7 @@ from ..evaluation.batch import EXPERIMENT_FILE, BatchResult, STOP_CRASHED, STOP_
 from ..evaluation.report import GROUP_BY, build_report
 from ..harness.loop import best_effort
 from ..llm import create_llm_client
+from ..memory import MemoryStore
 from ..task.workspace import LocalWorkspaceProvider
 from .errors import SetupError
 from .progress import ProgressPrinter
@@ -86,7 +87,8 @@ def _run(args: argparse.Namespace) -> int:
     except BatchError as e:
         raise SetupError(str(e)) from None
 
-    report = build_report(result.records(settings.runs_dir), f"实验 {spec.id}", notes=_experiment_notes(result))
+    report = build_report(result.records(settings.runs_dir), f"实验 {spec.id}", notes=_experiment_notes(result),
+                          card_labels=_card_labels(settings.memories_dir))
     (Path(exp_dir) / REPORT_FILE).write_text(report, encoding="utf-8")
     print(f"\n报告: {Path(exp_dir) / REPORT_FILE}")
     if result.stopped == STOP_TOKEN_CAP:
@@ -137,7 +139,7 @@ def _report(args: argparse.Namespace) -> int:
     if not records:
         raise SetupError("没有找到任何运行")
 
-    text = build_report(records, args.title, group_by=args.group_by, notes=notes)
+    text = build_report(records, args.title, group_by=args.group_by, notes=notes, card_labels=_card_labels(Settings.memories_dir))
     output = args.output or (experiment_dir / REPORT_FILE if experiment_dir and len(args.paths) == 1 else None)
     if output:
         output.write_text(text, encoding="utf-8")
@@ -145,3 +147,8 @@ def _report(args: argparse.Namespace) -> int:
     else:
         sys.stdout.write(text)
     return 0
+
+
+def _card_labels(memories_dir: Path) -> dict[str, str]:
+    """卡片 id → 人标注的行为变化. 读的是现在的卡片库: 标注可以在运行之后补上 (ADR-027)"""
+    return {card.id: card.evidence.pitfall for card in MemoryStore.load(memories_dir).cards}

@@ -158,3 +158,20 @@ def test_report_alerts_on_unresolved_and_confirmed_failures():
 
 def test_no_memory_section_without_memory():
     assert "## 经验" not in build_report([BASE], "报告")
+
+
+def test_memory_judgement_against_the_known_pitfalls():
+    # ADR-027: 卡片说的行为变化在这道题里 -> 应该确认; 不在 -> 应该去掉; 相关却没交给 agent -> 漏推
+    ok = {"command": "x", "output": ""}
+    records = [
+        dataclasses.replace(BASE, run_id="r1", pitfalls=("extra-alias",), memory=mem(confirmed={"alias": {"action": "a", **ok}})),
+        dataclasses.replace(BASE, run_id="r2", pitfalls=("number-to-str",), memory=mem(dismissed={"alias": {"reason": "r", **ok}})),
+        dataclasses.replace(BASE, run_id="r3", pitfalls=("number-to-str",), memory=mem(confirmed={"alias": {"action": "a", **ok}})),
+        dataclasses.replace(BASE, run_id="r4", pitfalls=("extra-alias",), memory=mem(matched={}, unresolved=[])),
+        dataclasses.replace(BASE, run_id="r5", pitfalls=("extra-alias",), memory=mem(forced=["alias"])),     # 验证用的, 不算
+    ]
+    text = build_report(records, "报告", card_labels={"alias": "extra-alias"})
+    assert "| alias | extra-alias | 1 | 0 | 0 | 1 | 1 | 0 | 1 |" in text
+    assert "判断正确的: 2/3" in text and "和题目相关的: 1/3" in text and "漏推): 1/2" in text
+    # 没有标注的卡片不计入, 但要提醒
+    assert "没有标注行为变化的卡片" in build_report(records, "报告", card_labels={})

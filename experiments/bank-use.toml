@@ -1,0 +1,15 @@
+# 题库, 第二阶段: 用 (ADR-027). 构造的题目各跑 3 次, 带着那时的卡片库. 构造的题目不做反思.
+# 报告里看"经验"和"记忆的判断 (按标准答案)"两节: 推送得准不准, 确认和去掉对不对, 有没有漏推.
+# 所有运行都带记忆 (用户的决定), 没有不带记忆的对照组: 不能说"有记忆比没有记忆好多少"
+id = "bank-use"
+description = "6 道构造的题目, 带记忆, 各 3 次"
+tasks = ["inventory-sync-pydantic2", "weather-feed-pydantic2", "billing-calc-pydantic2",
+         "forms-parser-pydantic2", "event-router-pydantic2", "crm-contacts-pydantic2"]
+repeats = 3
+# 构造的仓库很小, 一次运行预计远低于 200 万 (暂定, 第一轮跑完后按实际用量调整, ADR-018).
+# 上限按每次 100 万算: 18 次 = 1800 万
+max_total_tokens = 18_000_000
+
+[[arms]]
+name = "memory"
+memory = true

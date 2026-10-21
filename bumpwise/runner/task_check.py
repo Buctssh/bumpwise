@@ -51,8 +51,12 @@ def check_task(task: TaskSpec, provider: WorkspaceProvider, base_python: str,
     try:
         prepared = prepare(task, workspace, base_python, on_event=on_event)
         result.notes.append(f"旧版本下测试通过: {prepared.baseline.summary.splitlines()[-1]}")
-        if prepared.upgraded.passed:
+        if prepared.upgraded.passed and task.origin == "synthetic":
             result.problems.append("升级之后可见的测试仍然全部通过: agent 没有事可做")
+        elif prepared.upgraded.passed:
+            # 真实的仓库常常这样 (gpuhunt: 升级后只有废弃警告). agent 依然要迁移旧写法, 难点在隐藏测试里
+            result.notes.append(f"提醒: 升级之后可见的测试仍然通过 ({prepared.upgraded.summary.splitlines()[-1]}), "
+                                "agent 要靠警告和搜索找到要改的地方")
         else:
             result.notes.append(f"升级之后可见的测试失败: {prepared.upgraded.summary.splitlines()[-1]}")
 

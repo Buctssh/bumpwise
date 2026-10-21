@@ -1,0 +1,13 @@
+# 题库, 第一阶段: 学 (ADR-027). 真实的题目各跑一次, 带着记忆.
+# 没有通过的运行, 由人决定是否做反思 (memory reflect), 新的草稿再验证 (memory validate): 这两步不在实验里, 要单独花钱.
+# cortex 学到的卡片在 cortex 上被排除 (ADR-024), 所以这里只放还没有学过的题目
+id = "bank-learn"
+description = "真实的题目, 带记忆, 各 1 次. 失败的运行用来提炼经验"
+tasks = ["gpuhunt-pydantic2"]
+repeats = 1
+# 一次运行的预算是 200 万, 留一点余量
+max_total_tokens = 2_500_000
+
+[[arms]]
+name = "memory"
+memory = true
