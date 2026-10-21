@@ -6,5 +6,7 @@
 from __future__ import annotations
 
 from .reflect import REFLECTION_FILE, ReflectError, ReflectionResult, RunFacts, load_facts, parse_proposals, reflect
+from .validate import ValidateError, ValidationResult, validate_card
 
-__all__ = ["REFLECTION_FILE", "ReflectError", "ReflectionResult", "RunFacts", "load_facts", "parse_proposals", "reflect"]
+__all__ = ["REFLECTION_FILE", "ReflectError", "ReflectionResult", "RunFacts", "ValidateError", "ValidationResult",
+           "load_facts", "parse_proposals", "reflect", "validate_card"]
