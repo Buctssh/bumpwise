@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forms-parser"
+version = "2.0.3"
+description = "Parse signup forms posted by the marketing site"
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=1.10,<2",
+]
+
+[tool.setuptools]
+packages = ["forms_parser"]

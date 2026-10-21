@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crm-contacts"
+version = "3.1.0"
+description = "Read CRM contacts and convert web leads"
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=2,<3",
+]
+
+[tool.setuptools]
+packages = ["crm_contacts"]

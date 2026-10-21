@@ -1,0 +1,37 @@
+# 构造的题目 (ADR-027): 仓库的源代码在 tasks/synthetic/billing-calc/, 准备工作区时现建.
+# 只使用经验, 不提炼经验 (origin = "synthetic")
+id = "billing-calc-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "小店的发票计算: 没有别名. 埋了小数截断和 model == dict 两个静默的变化, 以及 root_validator 和 Optional 两个明显的变化. extra-allow 的卡片不会匹配"
+origin = "synthetic"
+
+[repo]
+url = "synthetic:billing-calc"
+base_commit = "06a5341b3ac6c95290dcbae454011637bef8a804"
+
+[environment]
+python = "3.12"
+install = ['python -m pip install -e . "pytest>=7.2,<8"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+test_command = "python -m pytest -q"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = '"pydantic>=1.10,<2"'
+new = '"pydantic>=2,<3"'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["billing_calc"]
+packages = ["billing_calc"]
+forbidden = ["parse_obj(", ".dict(", "class Config:", "@root_validator"]
+pitfalls = ["float-to-int-truncation", "model-eq-dict", "root-validator", "optional-no-default"]
+
+[evaluation.hidden_tests]
+commit = "033073e87bfecbe4de58a48a8fb21fa3557dfa88"
+paths = ["tests/test_behavior.py"]

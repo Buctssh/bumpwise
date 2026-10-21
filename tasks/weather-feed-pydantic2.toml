@@ -1,0 +1,37 @@
+# 构造的题目 (ADR-027): 仓库的源代码在 tasks/synthetic/weather-feed/, 准备工作区时现建.
+# 只使用经验, 不提炼经验 (origin = "synthetic")
+id = "weather-feed-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "气象站数据的小库: 字段带别名, 但没有 extra='allow', 也不用字段名构造. extra-allow 的卡片会被推送, 但不相关, 测试 agent 能不能正确地去掉它"
+origin = "synthetic"
+
+[repo]
+url = "synthetic:weather-feed"
+base_commit = "9498447860b77dbf1d8ccf8c305e6dbd25a9c629"
+
+[environment]
+python = "3.12"
+install = ['python -m pip install -e . "pytest>=7.2,<8"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+test_command = "python -m pytest -q"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = '"pydantic>=1.10,<2"'
+new = '"pydantic>=2,<3"'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["weather_feed"]
+packages = ["weather_feed"]
+forbidden = ["parse_obj(", ".dict(", "class Config:"]
+pitfalls = ["number-to-str-coercion", "optional-no-default"]
+
+[evaluation.hidden_tests]
+commit = "1daa247c056a9c2605efb543297cd0d5861f4668"
+paths = ["tests/test_behavior.py"]

@@ -1,0 +1,37 @@
+# 构造的题目 (ADR-027): 仓库的源代码在 tasks/synthetic/forms-parser/, 准备工作区时现建.
+# 只使用经验, 不提炼经验 (origin = "synthetic")
+id = "forms-parser-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "网站报名表单的小库: 别名写在 Config.fields 里, 还有 anystr_strip_whitespace. 搬进 model_config 后 v2 只给警告, 两者都悄悄失效. extra-allow 的卡片不会匹配"
+origin = "synthetic"
+
+[repo]
+url = "synthetic:forms-parser"
+base_commit = "f523b454a50e05416585d01f48083e2207fafbd2"
+
+[environment]
+python = "3.12"
+install = ['python -m pip install -e . "pytest>=7.2,<8"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+test_command = "python -m pytest -q"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = '"pydantic>=1.10,<2"'
+new = '"pydantic>=2,<3"'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["forms_parser"]
+packages = ["forms_parser"]
+forbidden = ["parse_obj(", ".dict(", "class Config:", "@validator", "anystr_strip_whitespace"]
+pitfalls = ["config-fields-alias", "config-strip-whitespace", "optional-no-default"]
+
+[evaluation.hidden_tests]
+commit = "f6f81718282d16ec71d9ee6ee832dd023def9463"
+paths = ["tests/test_behavior.py"]

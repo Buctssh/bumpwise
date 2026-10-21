@@ -1,0 +1,37 @@
+# 构造的题目 (ADR-027): 仓库的源代码在 tasks/synthetic/event-router/, 准备工作区时现建.
+# 只使用经验, 不提炼经验 (origin = "synthetic")
+id = "event-router-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "监控事件的路由: Union[int, str] 的优先级, 数字以字符串发来. v2 的 smart union 保留字符串, 路由悄悄变了. 还有根模型. extra-allow 的卡片不会匹配"
+origin = "synthetic"
+
+[repo]
+url = "synthetic:event-router"
+base_commit = "f423d82839622fff83ff39cadd33821c2a4c1c11"
+
+[environment]
+python = "3.12"
+install = ['python -m pip install -e . "pytest>=7.2,<8"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+test_command = "python -m pytest -q"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = '"pydantic>=1.10,<2"'
+new = '"pydantic>=2,<3"'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["event_router"]
+packages = ["event_router"]
+forbidden = ["parse_obj(", ".dict(", "__root__"]
+pitfalls = ["smart-union", "root-model", "optional-no-default"]
+
+[evaluation.hidden_tests]
+commit = "35c70a26c7c2673d051323ed978df95830392999"
+paths = ["tests/test_behavior.py"]

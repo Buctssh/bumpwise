@@ -1,0 +1,37 @@
+# 构造的题目 (ADR-027): 仓库的源代码在 tasks/synthetic/crm-contacts/, 准备工作区时现建.
+# 只使用经验, 不提炼经验 (origin = "synthetic")
+id = "crm-contacts-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "CRM 联系人的小库: 用类参数 extra=Extra.allow (和 inventory-sync 的 class Config 写法不同), 可选的别名字段用字段名构造; 还有数字的电话号码. 第二次测试 extra-allow 的卡片能不能迁移"
+origin = "synthetic"
+
+[repo]
+url = "synthetic:crm-contacts"
+base_commit = "308505054d8f7edd68b8466d9e7a950b26205241"
+
+[environment]
+python = "3.12"
+install = ['python -m pip install -e . "pytest>=7.2,<8"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+test_command = "python -m pytest -q"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = '"pydantic>=1.10,<2"'
+new = '"pydantic>=2,<3"'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["crm_contacts"]
+packages = ["crm_contacts"]
+forbidden = ["parse_obj(", ".dict(", "Extra.allow"]
+pitfalls = ["extra-allow-alias-by-name", "number-to-str-coercion", "optional-no-default"]
+
+[evaluation.hidden_tests]
+commit = "6b0a96842858dc47308fd27c803c7cfbb640a473"
+paths = ["tests/test_behavior.py"]
