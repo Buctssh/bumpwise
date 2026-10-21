@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -58,6 +59,7 @@ class Evidence(_Spec):
     source_runs: list[str] = Field(default_factory=list, description="出现这个问题的运行")
     check: str = Field("", description="哪一项检查发现的问题, 比如 hidden_tests")
     author: Literal["model", "human"]
+    validation_runs: list[str] = Field(default_factory=list, description="验证过这张卡片的运行 (带着它在学到它的题目上重跑)")
 
 
 class Card(_Spec):
@@ -133,3 +135,26 @@ def _major(version: str) -> int | None:
     # "1.10.26" → 1. 版本号不规范 (比如 "v2"), 返回 None: 和任何卡片都对不上, 宁可不用, 不要用错
     head = version.strip().split(".")[0]
     return int(head) if head.isdigit() else None
+
+
+def card_to_toml(card: Card) -> str:
+    """把卡片写成 TOML. tomllib 只能读不能写, 卡片的结构固定而且简单, 自己写比引入一个依赖更合适.
+
+    字符串用 JSON 的写法: TOML 的基本字符串和 JSON 的转义规则相同 (反斜杠, 双引号, 换行, unicode 转义), json.dumps 的结果就是合法的 TOML.
+    tests/test_memory.py 用往返测试检查: 写出去再读回来, 必须和原来完全一样
+    """
+    def value(v) -> str:
+        return json.dumps(v, ensure_ascii=False) if not isinstance(v, int) else str(v)
+
+    lines = [f"{key} = {value(getattr(card, key))}" for key in
+             ("id", "package", "from_major", "to_major", "status", "title", "applies_when",
+              "symptom", "why_tests_miss", "fix", "verify")]
+    if card.deprecated_reason:
+        lines.append(f"deprecated_reason = {value(card.deprecated_reason)}")
+    if card.trigger is not None:
+        lines += ["", "[trigger]", f"pattern = {value(card.trigger.pattern)}"]
+    evidence = card.evidence
+    lines += ["", "[evidence]"] + [f"{key} = {value(getattr(evidence, key))}" for key in
+                                   ("learned_from", "source_runs", "check", "author", "validation_runs")]
+    return "\n".join(lines) + "\n"
+

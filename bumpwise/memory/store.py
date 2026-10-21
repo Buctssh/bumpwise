@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..config import PROJECT_ROOT
-from .card import VALIDATED, Card, load_card
+from .card import VALIDATED, Card, card_to_toml, load_card
 
 MEMORIES_DIR = PROJECT_ROOT / "memories"
 
@@ -38,6 +38,21 @@ class MemoryStore:
                 and card.applies_to(package, from_version, to_version)
                 and not excluded & set(card.evidence.learned_from)]
 
+    def find_similar(self, card: Card) -> Card | None:
+        """已有的卡片里, 和这张说的是同一件事的: id 相同, 或者同一个依赖, 同样的版本, 同样的触发条件.
+        反思提炼出新的经验时, 先找这样的卡片: 找到了就合并 (证据累加), 不另起一张 (ADR-024)"""
+        for existing in self.cards:
+            if existing.id == card.id:
+                return existing
+            same_scope = (existing.package, existing.from_major, existing.to_major) == (card.package, card.from_major, card.to_major)
+            if same_scope and existing.trigger is not None and card.trigger is not None \
+                    and existing.trigger.pattern == card.trigger.pattern:
+                return existing
+        return None
+
+    def get(self, card_id: str) -> Card | None:
+        return next((c for c in self.cards if c.id == card_id), None)
+
     def version(self) -> str:
         """记忆的版本号: 写进每次运行的 meta, 和 prompt 的哈希是同一个用途: 两次运行用的是不是同一套记忆.
 
@@ -56,3 +71,15 @@ def _behavior(card: Card) -> dict:
     data = card.model_dump(exclude={"evidence"})
     data["learned_from"] = sorted(card.evidence.learned_from)
     return data
+
+
+def save_card(card: Card, directory: Path = MEMORIES_DIR) -> Path:
+    """把卡片写进 memories/<id>.toml (覆盖同名的文件). 先写临时文件再替换: 写到一半被打断, 也不会留下半张卡片"""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{card.id}.toml"
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(card_to_toml(card), encoding="utf-8", newline="\n")
+    tmp.replace(path)
+    return path
+
