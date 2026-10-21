@@ -62,6 +62,7 @@ class Settings:
     runs_dir: Path = PROJECT_ROOT / "runs"     # 每次运行的记录保存在这里
     workspace_dir: Path = PROJECT_ROOT / "workspace"   # 本地镜像和每次运行的工作区 (见 task/workspace.py)
     evals_dir: Path = PROJECT_ROOT / "evals"            # 评测的输出: 每次实验的清单和报告 (见 evaluation/batch.py)
+    memories_dir: Path = PROJECT_ROOT / "memories"      # 经验卡片 (见 memory/, ADR-024)
 
     @classmethod
     def from_env(cls) -> Settings:

@@ -21,11 +21,13 @@ from ..config import Settings
 from ..env import Environment
 from ..harness.budget import TokenBudget
 from ..harness.guards import default_guards
+from ..harness.guards.experience import ExperienceGuard
 from ..harness.loop import AgentLoop, EventHandler, RunResult, Status, fan_out
 from ..harness.policy import RulePolicy
 from ..harness.prompts import SYSTEM_PROMPT, build_system_prompt, build_task_message
 from ..harness.trace import MESSAGES_FILE, TraceWriter, new_run_id, now_iso
 from ..llm import LLMClient
+from ..memory import ExperienceSession, MemoryStore, match_cards
 from ..task import TaskSpec
 from ..task.prepare import PrepareError, prepare
 from ..task.workspace import WorkspaceError, WorkspaceProvider
@@ -55,6 +57,10 @@ class AgentTask:
     test_command: str
     notes: str = ""
     budget: int | None = None   # 这道题的 token 预算. None 表示用配置里的默认值
+    # 选择经验要用 (V7): 依赖的版本, 以及题目的编号 (从这道题学到的经验不能用在这道题上). --repo 方式的运行没有这些
+    task_id: str | None = None
+    from_version: str | None = None
+    to_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +76,7 @@ class AgentConfig:
     guards: tuple[str, ...] | None = None    # 用哪些护栏. None: 全部的护栏; (): 一个都不用
     token_budget: int | None = None          # 设置了就覆盖题目里的 [budget]. None: 题目里的, 没有时用配置的默认值
     max_turns: int | None = None             # None: 用配置的值
+    memory: bool = False                     # 用不用长期记忆 (经验卡片, V7). 默认不用: 消融实验的数据出来之前, 标准配置不变
 
 
 @dataclass(frozen=True)
@@ -147,7 +154,8 @@ def run_task(
         }
         m = task.migration
         agent_task = AgentTask(m.package, m.target, prepared.state, m.test_command, m.notes,
-                               budget=task.budget.tokens if task.budget is not None else None)
+                               budget=task.budget.tokens if task.budget is not None else None,
+                               task_id=task.id, from_version=m.from_version, to_version=m.to_version)
         outcome = _run_agent(env, prepared.start_commit, agent_task, settings, llm, trace, meta, on_event, agent)
         # 平时只给正常结束的运行评分: 其他情况下工作区停在做到一半的状态, 人看评分的意义不大.
         # 评测时 (grade_unfinished) 要给每一次 agent 真正运行过的结果评分: 没做完也是一种成绩, 不评分的话,
@@ -223,6 +231,10 @@ def _run_agent(
     policy = RulePolicy(protected_packages=[agent_task.package])
     # 护栏有状态, 每次运行都新建
     guards = default_guards(agent_task.test_command, SCRATCH_DIR, agent.guards)
+    # 长期记忆: 选出这次可以用的经验, 在工作区里匹配触发条件. 推送由护栏负责 (和其他护栏一样, 每次运行都新建)
+    session, memory_meta = _select_experience(env, agent_task, settings) if agent.memory else (None, None)
+    if session is not None:
+        guards.append(ExperienceGuard(session, agent_task.test_command))
     # 预算的优先级: 对照组 > 题目 > 配置的默认值. 记下来自哪里: 比较两次运行时, 预算不同也是一种"条件不同"
     if agent.token_budget:
         budget, budget_source = TokenBudget(agent.token_budget), "agent"
@@ -234,7 +246,8 @@ def _run_agent(
     info = env.describe()
     system = build_system_prompt(info, policy.describe(), SCRATCH_DIR, name=agent.system_prompt)
     task_message = build_task_message(
-        agent_task.package, agent_task.target, agent_task.state, agent_task.test_command, agent_task.notes
+        agent_task.package, agent_task.target, agent_task.state, agent_task.test_command, agent_task.notes,
+        experience=session.index() if session is not None else "",
     )
 
     trace.write_text("prompts/system.md", system.text)
@@ -251,6 +264,9 @@ def _run_agent(
         agent=dataclasses.asdict(agent),
         max_turns=max_turns,
     )
+    if memory_meta is not None:
+        # 记忆的版本号和这次选中的卡片: 比较两次运行时, 记忆不同也是一种"条件不同"
+        meta["memory"] = memory_meta
     trace.write_meta(meta)
     on_event("agent_start", {
         "workdir": env.workdir,
@@ -281,12 +297,50 @@ def _run_agent(
     end_commit = record.git(env, "rev-parse HEAD")
     changes = record.git(env, record.GIT_STATUS)
     meta["repo"].update(head_end=end_commit, changes=changes)
+    if session is not None:
+        # 推送, 查看, 去掉了哪些经验: 每张卡片的统计都从这里算出来, 不写回卡片 (ADR-024)
+        meta["memory"].update(session.summary())
     meta.update(status=result.status.value, finished_at=now_iso(), result=record.result_meta(result))
     trace.write_meta(meta)
     return RunOutcome(
         run_id=trace.run_id, trace_dir=trace.dir, status=result.status.value, result=result, error=result.error,
         workdir=env.workdir, start_commit=start_commit, end_commit=end_commit, changes=changes,
     )
+
+
+# 匹配触发条件时读取的文件: 太大的文件 (多半是数据或者生成的代码) 和二进制文件跳过
+_MAX_FILE_BYTES = 200_000
+
+
+def _select_experience(env: Environment, agent_task: AgentTask,
+                       settings: Settings) -> tuple[ExperienceSession | None, dict[str, Any]]:
+    """选出这次运行可以用的经验, 在工作区的文件里匹配触发条件. 返回 (一次运行的经验状态, 写进 meta 的内容)"""
+    store = MemoryStore.load(settings.memories_dir)
+    info: dict[str, Any] = {"version": store.version()}
+    if not (agent_task.from_version and agent_task.to_version):
+        # --repo 方式的运行不知道依赖的确切版本, 选不出经验
+        info["skipped"] = "不知道依赖的版本, 无法选择经验"
+        return None, info
+    # 从这道题学到的经验, 不能用在这道题上 (ADR-024): 由代码强制执行
+    cards = store.usable(agent_task.package, agent_task.from_version, agent_task.to_version,
+                         exclude_tasks=[agent_task.task_id] if agent_task.task_id else ())
+    matched, timed_out = match_cards(cards, _workspace_files(env))
+    info.update(candidates=[c.id for c in cards], timed_out=timed_out)
+    return ExperienceSession({c.id: c for c in cards}, matched), info
+
+
+def _workspace_files(env: Environment) -> list[tuple[str, str]]:
+    """工作区里被 git 跟踪的文本文件 (路径, 内容). 通过 env 读: 以后工作区在容器里, 这里不用改"""
+    files = []
+    for path in filter(None, record.git(env, "-c core.quotePath=false ls-files").splitlines()):
+        try:
+            data = env.read_bytes(path)
+        except (OSError, ValueError):
+            continue    # 文件被删掉了, 或者路径不合法
+        if len(data) > _MAX_FILE_BYTES or b"\x00" in data[:8192]:
+            continue
+        files.append((path, data.decode("utf-8", errors="replace")))
+    return files
 
 
 def _record_crash(trace: TraceWriter, meta: dict[str, Any], error: BaseException) -> None:
