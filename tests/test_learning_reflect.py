@@ -91,7 +91,7 @@ def test_good_card_is_saved_as_a_draft(run_dir, tmp_path):
     assert card.evidence.learned_from == ["cortex-pydantic2"] and card.evidence.source_runs == ["run-7"]
     assert card.evidence.check == "hidden_tests" and card.evidence.author == "model"
     record = json.loads((run_dir / REFLECTION_FILE).read_text(encoding="utf-8"))
-    assert record["created"] == ["pydantic2-alias-field-name"] and record["prompt"]["name"] == "reflect_v1"
+    assert record["created"] == ["pydantic2-alias-field-name"] and record["prompt"]["name"] == "reflect_v2"
 
 
 def test_dry_run_saves_nothing(run_dir, tmp_path):
@@ -128,10 +128,10 @@ def test_card_without_trigger_is_allowed(run_dir, tmp_path):
     assert card.trigger is None
 
 
-def test_at_most_three_cards(run_dir, tmp_path):
-    # 5 条经验 (没有触发条件, 免得和已有的卡片被当成同一张合并), 只保留前 3 条
+def test_at_most_two_cards(run_dir, tmp_path):
+    # 5 条经验 (没有触发条件, 免得和已有的卡片被当成同一张合并), 只保留前 2 条
     cards = [{**GOOD, "id": f"pydantic2-card-{i}", "trigger_pattern": None} for i in range(5)]
-    assert len(do(run_dir, tmp_path, *cards).created) == 3
+    assert len(do(run_dir, tmp_path, *cards).created) == 2
 
 
 # ---------------------------------------------------------------- 合并
@@ -178,3 +178,40 @@ def test_unparsable_output(text, error):
 def test_empty_array_means_nothing_to_learn(run_dir, tmp_path):
     result = do(run_dir, tmp_path)
     assert not result.created and not result.rejected and not result.merged
+
+
+# ---------------------------------------------------------------- 冒烟测试的运行上发现的问题 (reflect_v1 → v2)
+
+def test_truncated_output_is_reported_and_recorded(run_dir, tmp_path):
+    # 输出写到一半就停了 (thinking 也算在长度上限里): 给出清楚的错误, 并把原始输出记下来
+    llm = FakeLLM(LLMResponse(content=[{"type": "text", "text": '[{"id": "x", "why_tests_miss": "丢失 ali'}],
+                              stop_reason="max_tokens"))
+    with pytest.raises(ReflectError, match="超出了长度上限"):
+        reflect(run_dir, llm, store_dir=tmp_path / "memories", files=FILES)
+    record = json.loads((run_dir / REFLECTION_FILE).read_text(encoding="utf-8"))
+    assert "超出了长度上限" in record["error"] and record["raw"].endswith("丢失 ali")
+
+
+def test_model_sees_the_code_behind_the_names_in_the_failure(run_dir, tmp_path):
+    # 只看报错, v1 猜测"别名被丢掉了"; 而代码里别名一直都在. v2 把报错里提到的名字在代码里现在的样子也给模型.
+    # 报错和冒烟测试的真实报错一样: 导出的字典里, 键是带引号的
+    grade = json.loads((run_dir / "grade.json").read_text(encoding="utf-8"))
+    grade["checks"][1]["data"]["failure_messages"] = {"t": "Right contains 1 more items:\n{'_insert_time': 100}"}
+    (run_dir / "grade.json").write_text(json.dumps(grade, ensure_ascii=False), encoding="utf-8")
+    llm = model()
+    reflect(run_dir, llm, store_dir=tmp_path / "memories", files=FILES)
+    message = llm.calls[0][0]["content"]
+    assert "# 报错里提到的名字, 在代码里现在的样子" in message
+    assert "client/models/issues.py:2: insert_time: int = Field(alias='_insert_time')" in message
+
+
+def test_names_from_the_failure_count_as_repo_details(run_dir, tmp_path):
+    # v1 的输出里写了 status.progress, _insert_time 这些别名: 它们只属于原仓库
+    meta_grade = json.loads((run_dir / "grade.json").read_text(encoding="utf-8"))
+    meta_grade["checks"][1]["data"]["failure_messages"] = {"t": "{'_insert_time': 100, 'status.progress': 'New'}"}
+    (run_dir / "grade.json").write_text(json.dumps(meta_grade, ensure_ascii=False), encoding="utf-8")
+    result = do(run_dir, tmp_path, {**GOOD, "symptom": "导出时 status.progress 变成了 status_progress"})
+    assert not result.created and any("status.progress" in p for p in result.rejected[0][1])
+    # 短的值 ('New') 不算: 太容易和普通的词撞上
+    assert not do(run_dir, tmp_path, {**GOOD, "id": "pydantic2-other", "trigger_pattern": None,
+                                      "symptom": "new 版本里的行为"}).rejected
