@@ -245,6 +245,20 @@ def test_long_classes_are_cut():
     assert out[0] == "big.py:1-102:" and len(out) == _CLASS_LINES + 2 and "后面的省略了" in out[-1]
 
 
+def test_deprecated_cards_are_shown_with_the_reason_and_never_merged(run_dir, tmp_path):
+    # 废弃的卡片: 单独列出它的废弃原因, 新的经验不能合并进去, 也不能用它的 id
+    store = tmp_path / "memories"
+    do(run_dir, tmp_path, {**GOOD, "trigger_pattern": r"alias\s*="})
+    old = load_card(store / "pydantic2-alias-field-name.toml")
+    save_card(old.model_copy(update={"status": "deprecated", "deprecated_reason": "适用条件写错了"}), store)
+    llm = model({**GOOD, "trigger_pattern": r"alias\s*="}, {**GOOD, "id": "pydantic2-extra-allow-field-name"})
+    result = reflect(run_dir, llm, store_dir=store, files=FILES)
+    assert "废弃的原因: 适用条件写错了" in llm.systems[0] and "[pydantic2-alias-field-name]" not in llm.systems[0].split("# 已经废弃的经验")[0]
+    assert "已经废弃的卡片相同" in result.rejected[0][1][-1]
+    # 触发条件和废弃的卡片一样, 但 id 不同: 另起一张, 不合并
+    assert [c.id for c in result.created] == ["pydantic2-extra-allow-field-name"] and not result.merged
+
+
 def test_common_names_are_not_clues():
     # 冒烟测试的报错里有 'json', 'data': 它们出现在大部分文件里, README 和无关的类占满了名额
     from bumpwise.learning.reflect import enclosing_classes

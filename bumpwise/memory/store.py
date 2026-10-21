@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..config import PROJECT_ROOT
-from .card import VALIDATED, Card, card_to_toml, load_card
+from .card import DEPRECATED, VALIDATED, Card, card_to_toml, load_card
 
 MEMORIES_DIR = PROJECT_ROOT / "memories"
 
@@ -40,8 +40,11 @@ class MemoryStore:
 
     def find_similar(self, card: Card) -> Card | None:
         """已有的卡片里, 和这张说的是同一件事的: id 相同, 或者同一个依赖, 同样的版本, 同样的触发条件.
-        反思提炼出新的经验时, 先找这样的卡片: 找到了就合并 (证据累加), 不另起一张 (ADR-024)"""
+        反思提炼出新的经验时, 先找这样的卡片: 找到了就合并 (证据累加), 不另起一张 (ADR-024).
+        废弃的卡片不算: 合并只累加证据, 不改内容, 新的经验合并进去, 等于又一次被废弃 (id 相同时由反思退回)"""
         for existing in self.cards:
+            if existing.status == DEPRECATED:
+                continue
             if existing.id == card.id:
                 return existing
             same_scope = (existing.package, existing.from_major, existing.to_major) == (card.package, card.from_major, card.to_major)

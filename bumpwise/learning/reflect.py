@@ -26,7 +26,7 @@ from ..env import LocalEnvironment
 from ..harness.prompts import render
 from ..harness.trace import TraceFiles, load_events, load_meta, now_iso
 from ..llm import LLMClient
-from ..memory import DRAFT, MEMORIES_DIR, Card, MemoryStore, save_card
+from ..memory import DEPRECATED, DRAFT, MEMORIES_DIR, Card, MemoryStore, save_card
 from ..runner import record
 from ..runner.grade import GRADE_FILE
 from .checks import check_trigger, find_specifics, merge_evidence, specific_tokens
@@ -224,9 +224,14 @@ def reflect(run_dir: Path, llm: LLMClient, store_dir: Path = MEMORIES_DIR,
     names = quoted_names(messages)
     facts = dataclasses.replace(facts, code=code_evidence(names, files), before=enclosing_classes(names, before_files))
 
-    existing = [c for c in store.cards if c.applies_to(facts.package, facts.from_version, facts.to_version)]
-    system = render(REFLECT_PROMPT, {"existing": "\n".join(
-        f"{c.index_line()} 触发条件: {c.trigger.pattern if c.trigger else '无'}" for c in existing) or "(还没有)"})
+    scope = [c for c in store.cards if c.applies_to(facts.package, facts.from_version, facts.to_version)]
+    existing = [c for c in scope if c.status != DEPRECATED]
+    # 废弃的卡片单独给出, 带上废弃的原因: 不要再提炼一次同样的错误 (第一次验证: 适用条件写错了, docs/v7/validation-001.md)
+    deprecated = [c for c in scope if c.status == DEPRECATED]
+    system = render(REFLECT_PROMPT, {
+        "existing": "\n".join(f"{c.index_line()} 触发条件: {c.trigger.pattern if c.trigger else '无'}" for c in existing) or "(还没有)",
+        "deprecated": "\n".join(f"{c.index_line()} 废弃的原因: {c.deprecated_reason}" for c in deprecated) or "(没有)",
+    })
     response = llm.create(system.text, [], [{"role": "user", "content": facts_text(facts)}])
     result = ReflectionResult(raw=response.text)
     # 反思也要花钱: 记下用量, 题库的测试要算"提炼一张卡片要多少 token"
@@ -251,6 +256,9 @@ def reflect(run_dir: Path, llm: LLMClient, store_dir: Path = MEMORIES_DIR,
         card, problems = _build_card(data, facts, check_names)
         if card is not None:
             problems += find_specifics(card, tokens) + check_trigger(card, before_files)
+            old = store.get(card.id)
+            if old is not None and old.status == DEPRECATED:
+                problems.append(f"id 和一张已经废弃的卡片相同 ({card.id}): 换一个 id")
         if problems:
             result.rejected.append((data, problems))
             continue
