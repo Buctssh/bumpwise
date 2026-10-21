@@ -92,6 +92,8 @@ def test_good_card_is_saved_as_a_draft(run_dir, tmp_path):
     assert card.evidence.check == "hidden_tests" and card.evidence.author == "model"
     record = json.loads((run_dir / REFLECTION_FILE).read_text(encoding="utf-8"))
     assert record["created"] == ["pydantic2-alias-field-name"] and record["prompt"]["name"] == "reflect_v2"
+    # 反思的用量也记下来: 题库的测试要算提炼的成本
+    assert set(record["usage"]) == {"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"}
 
 
 def test_dry_run_saves_nothing(run_dir, tmp_path):

@@ -156,6 +156,9 @@ def reflect(run_dir: Path, llm: LLMClient, store_dir: Path = MEMORIES_DIR,
         f"{c.index_line()} 触发条件: {c.trigger.pattern if c.trigger else '无'}" for c in existing) or "(还没有)"})
     response = llm.create(system.text, [], [{"role": "user", "content": facts_text(facts)}])
     result = ReflectionResult(raw=response.text)
+    # 反思也要花钱: 记下用量, 题库的测试要算"提炼一张卡片要多少 token"
+    usage = {"input_tokens": response.input_tokens, "output_tokens": response.output_tokens,
+             "cache_read_tokens": response.cache_read_tokens, "cache_write_tokens": response.cache_write_tokens}
     try:
         if response.stop_reason == "max_tokens":
             raise ReflectError(f"反思的输出超出了长度上限, 被截断了 (写到: ...{response.text[-200:]})")
@@ -164,7 +167,7 @@ def reflect(run_dir: Path, llm: LLMClient, store_dir: Path = MEMORIES_DIR,
         # 失败也留下记录: 模型的原始输出, 失败的原因. 人事后能看到它想说什么
         if save:
             TraceFiles(run_dir).write_json(REFLECTION_FILE, {"at": now_iso(), "prompt": {"name": system.name, "sha256": system.sha256},
-                                                             "raw": response.text, "error": str(e)})
+                                                             "usage": usage, "raw": response.text, "error": str(e)})
         raise
 
     tokens = specific_tokens(facts.diff, facts.failed_details(), facts.task_id, facts.repo_url, facts.package)
@@ -189,7 +192,7 @@ def reflect(run_dir: Path, llm: LLMClient, store_dir: Path = MEMORIES_DIR,
             save_card(card, store_dir)
         # 反思的记录: 人抽查的时候看这个文件就够了
         TraceFiles(run_dir).write_json(REFLECTION_FILE, {
-            "at": now_iso(), "prompt": {"name": system.name, "sha256": system.sha256}, "raw": result.raw,
+            "at": now_iso(), "prompt": {"name": system.name, "sha256": system.sha256}, "usage": usage, "raw": result.raw,
             "created": [c.id for c in result.created], "merged": [c.id for c in result.merged],
             "rejected": [{"proposal": d, "problems": p} for d, p in result.rejected],
         })
