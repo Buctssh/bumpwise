@@ -18,6 +18,7 @@ PROMPTS_DIR = PROJECT_ROOT / "prompts"
 # 只写通用的原则, 不写某一道题的具体问题: 否则拿同一道题评测, 等于提前告诉了 agent 答案. v1, v2 保留, 用于对照
 SYSTEM_PROMPT = "system_v3"
 TASK_PROMPT = "task_v1"
+TASK_PROMPT_WITH_EXPERIENCE = "task_v2"     # 多了"过去的经验"一节 (V7, ADR-024)
 
 # 每种 shell 下可以用什么命令. 运行 001 中, 模型在 cmd.exe 里习惯性地使用 head, 而 prompt 还要求使用不存在的 rg.
 # 搜索代码统一推荐 git grep: 每个平台都有, 而且会跳过被 git 忽略的文件 (比如 .venv), 输出不会被第三方库的代码淹没.
@@ -107,11 +108,13 @@ def build_task_message(
     test_command: str,
     notes: str = "",
     prompts_dir: Path = PROMPTS_DIR,
+    experience: str = "",
 ) -> RenderedPrompt:
-    """渲染任务说明,作为发给模型的第一条 user 消息"""
-    return render(
-        TASK_PROMPT,
-        {"package": package, "target": target, "state": state, "test_command": test_command,
-         "notes": notes},
-        prompts_dir,
-    )
+    """渲染任务说明,作为发给模型的第一条 user 消息. experience 是经验的目录 (V7), 有经验时用 task_v2.
+
+    没有经验时依然用 task_v1, 一个字都不变: 消融实验里, "有记忆但这个仓库没有匹配上任何经验"的运行,
+    和"没有记忆"的运行看到的任务消息完全一样, 差别只来自记忆本身"""
+    variables = {"package": package, "target": target, "state": state, "test_command": test_command, "notes": notes}
+    if experience:
+        return render(TASK_PROMPT_WITH_EXPERIENCE, {**variables, "experience": experience}, prompts_dir)
+    return render(TASK_PROMPT, variables, prompts_dir)
