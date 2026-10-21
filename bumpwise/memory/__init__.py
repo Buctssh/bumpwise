@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 from .card import DEPRECATED, DRAFT, VALIDATED, Card, CardError, Evidence, Trigger, load_card
+from .match import MATCH_TIMEOUT, MAX_LINE, match_cards
+from .session import ExperienceSession
 from .store import MEMORIES_DIR, MemoryStore
 
-__all__ = ["DEPRECATED", "DRAFT", "MEMORIES_DIR", "VALIDATED", "Card", "CardError", "Evidence", "MemoryStore",
-           "Trigger", "load_card"]
+__all__ = ["DEPRECATED", "DRAFT", "MATCH_TIMEOUT", "MAX_LINE", "MEMORIES_DIR", "VALIDATED", "Card", "CardError",
+           "Evidence", "ExperienceSession", "MemoryStore", "Trigger", "load_card", "match_cards"]

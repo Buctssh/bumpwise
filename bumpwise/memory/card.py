@@ -28,18 +28,26 @@ class _Spec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+# ReDoS 的第一道防线 (第二道是 match.MAX_LINE): 触发条件是模型写的, 是不可信的输入.
+# 嵌套的量词, 比如 (a+)+, (\w*)*, (x+){2,}: 遇到特定的输入, 匹配的时间呈指数级增长. 反向引用 (\1 到 \9) 同样可能很慢, 而且用不到.
+# 这个检查是保守的, 会误拒一些其实安全的写法: 宁可让模型把正则改简单, 也不冒卡死的风险
+_NESTED_QUANTIFIER = re.compile(r"\((?:[^()\\]|\\.)*[+*}]\)\s*[+*{]")
+_BACKREFERENCE = re.compile(r"\\[1-9]")
+
+
 class Trigger(_Spec):
     pattern: str = Field(min_length=1, description="Python 的正则表达式, 在仓库的源代码里逐行匹配")
 
     @field_validator("pattern")
     @classmethod
     def _compiles(cls, value: str) -> str:
-        # 模型写的正则可能是错的: 加载时就编译一次, 而不是等到运行时才发现匹配不上.
-        # 注意: 能编译不代表安全. 有些正则遇到特定的输入会匹配很久 (ReDoS), 匹配时要另外限制 (见模块 3)
+        # 模型写的正则可能是错的: 加载时就编译一次. 能编译不代表安全, 再检查有没有可能匹配得很慢的写法
         try:
             re.compile(value)
         except re.error as e:
             raise ValueError(f"正则表达式不合法: {e}") from None
+        if _NESTED_QUANTIFIER.search(value) or _BACKREFERENCE.search(value):
+            raise ValueError(f"正则表达式 {value!r} 可能匹配得很慢 (嵌套的量词或反向引用), 请改写得简单一些")
         return value
 
 
