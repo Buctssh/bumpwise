@@ -38,8 +38,9 @@ from .checks import check_trigger, find_specifics, merge_evidence, specific_toke
 REFLECT_PROMPT = "reflect_v3"
 REFLECTION_FILE = "reflection.json"
 MAX_CARDS = 2           # 和 prompt 里的要求一致: 一次反思最多提炼几条. 多了往往是把一个问题拆碎了
-# 反思的输出上限: thinking 也算在里面. 冒烟测试的运行上, 默认的 8192 不够, 输出写到一半就停了. 暂定 (ADR-018)
-REFLECT_MAX_TOKENS = 16384
+# 反思的输出上限: thinking 也算在里面. 冒烟测试的运行上, 默认的 8192 不够, 输出写到一半就停了;
+# reflect_v3 用了 16064 / 16384, 差一点又被截断. 暂定 (ADR-018)
+REFLECT_MAX_TOKENS = 32768
 _CODE_LINES = 40        # "迁移之后的样子"最多给多少行
 _BEFORE_LINES = 150     # "迁移之前所在的类"一共最多给多少行
 _CLASS_LINES = 60       # 其中一个类最多给多少行

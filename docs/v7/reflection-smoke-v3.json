@@ -1,0 +1,19 @@
+{
+ "at": "2026-10-21T13:25:52+08:00",
+ "prompt": {
+  "name": "reflect_v3",
+  "sha256": "95c1b6df0b5a7c183defa94280d0873a4435f724068d67a9ed405baceac4af12"
+ },
+ "usage": {
+  "input_tokens": 8983,
+  "output_tokens": 16064,
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0
+ },
+ "raw": "```json\n[{\"id\": \"pydantic2-extra-allow-alias-python-name\", \"title\": \"extra='allow' 下用字段名填别名字段, v2 落到额外字段\", \"applies_when\": \"模型在 v1 类式 `class Config` 里设了 `extra = 'allow'`，并且有带 `Field(..., alias=...)` 的字段（线上名与 Python 名不同）；这种模型在 v1 里用 Python 字段名传值也能填进字段本身。\", \"trigger_pattern\": \"Field\\\\([^)]*\\\\balias\\\\s*=\", \"symptom\": \"v1 下按 Python 字段名传入别名字段时，该额外键与字段名同名、覆盖了字段值，所以字段真的有值，`dict(by_alias=True)` 输出线上别名；v2 下该值进了 `__pydantic_extra__`，声明的字段仍是默认 None，`model_dump(by_alias=True)` 输出的是 Python 字段名，线上名与值都不见了。\", \"why_tests_miss\": \"原有测试要么全程使用线上别名传值，要么只读字段属性，没有“用 Python 名构造 + by_alias 导出”的用例，两种语义看起来完全一样。\", \"fix\": \"在 `model_config` 里加 `populate_by_name=True`（pydantic 2.11 起可改用 `validate_by_name=True`，默认 `validate_by_alias=True` 保留别名输入），使 Python 名也能填充别名字段，且按别名导出；不要在批量给 Optional 字段补 `= None` 时丢掉 alias。\", \"verify\": \"import pydantic\\nfrom pydantic import BaseModel, Field\\nif pydantic.VERSION.startswith('2'):\\n    from pydantic import ConfigDict\\n    class M(BaseModel):\\n        model_config = ConfigDict(extra='allow')\\n        user_name: str = Field(None, alias='user.name')\\n    d = lambda m: m.model_dump(by_alias=True, exclude_none=True)\\nelse:\\n    class M(BaseModel):\\n        class Config:\\n            extra = 'allow'\\n        user_name: str = Field(None, alias='user.name')\\n    d = lambda m: m.dict(by_alias=True, exclude_none=True)\\nm = M(user_name='bob')\\nprint(pydantic.VERSION, m.user_name, d(m))\"}]\n```",
+ "created": [
+  "pydantic2-extra-allow-alias-python-name"
+ ],
+ "merged": [],
+ "rejected": []
+}
