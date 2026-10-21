@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from dataclasses import dataclass, field
@@ -28,11 +29,18 @@ from ..runner import record
 from ..runner.grade import GRADE_FILE
 from .checks import check_trigger, find_specifics, merge_evidence, specific_tokens
 
-REFLECT_PROMPT = "reflect_v1"
+# v2: 加上"报错里提到的名字在代码里现在的样子", 要求解释和代码一致. v1 在冒烟测试的运行上, 只看到报错没看到代码,
+# 猜测"补默认值时别名被丢掉了", 而代码里别名一直都在 (docs/v7/reflection-check.md). v1 保留, 用于对照
+REFLECT_PROMPT = "reflect_v2"
 REFLECTION_FILE = "reflection.json"
-MAX_CARDS = 3           # 和 prompt 里的要求一致: 一次反思最多提炼几条. 多了往往是把一个问题拆碎了
+MAX_CARDS = 2           # 和 prompt 里的要求一致: 一次反思最多提炼几条. 多了往往是把一个问题拆碎了
+# 反思的输出上限: thinking 也算在里面. 冒烟测试的运行上, 默认的 8192 不够, 输出写到一半就停了. 暂定 (ADR-018)
+REFLECT_MAX_TOKENS = 16384
+_CODE_LINES = 40        # "代码现在的样子"最多给多少行
 _REPORT_CHARS = 6000    # agent 的最终报告最多给多少字符
 _CALLS = 80             # 工具调用的摘要最多给多少条 (最后的那些: 越往后越接近结论)
+_QUOTED = re.compile(r"""['"]([\w.\-]+)['"]""")
+_MIN_NAME = 4           # 太短的名字 (比如 'id', 'New') 和普通的词撞上的可能太大
 
 
 class ReflectError(Exception):
@@ -54,6 +62,7 @@ class RunFacts:
     tool_calls: list[str]
     diff: str
     workdir: str | None
+    code: list[str] = field(default_factory=list)      # 报错里提到的名字, 在代码里现在的样子 (路径:行号: 内容)
 
     def failed_details(self) -> list[str]:
         return [line for check in self.failed_checks for line in check.get("details", [])]
@@ -96,6 +105,23 @@ def load_facts(run_dir: Path) -> RunFacts:
     )
 
 
+def quoted_names(messages: list[str]) -> set[str]:
+    """报错里带引号的名字 (比如 '_insert_time', "status.progress"): 多半是字段名, 别名, 或者测试数据里的值"""
+    return {name for message in messages for name in _QUOTED.findall(message) if len(name) >= _MIN_NAME}
+
+
+def code_evidence(names: set[str], files: list[tuple[str, str]] | None) -> list[str]:
+    """这些名字在代码里现在的样子. 反思要用它核实自己的解释: 只看报错, 很容易猜错原因"""
+    if not names or files is None:
+        return []
+    lines = []
+    for path, text in files:
+        for number, line in enumerate(text.splitlines(), 1):
+            if any(name in line for name in names):
+                lines.append(f"{path}:{number}: {line.strip()[:200]}")
+    return lines[:_CODE_LINES]
+
+
 def facts_text(facts: RunFacts) -> str:
     """交给模型的用户消息"""
     checks = []
@@ -107,6 +133,7 @@ def facts_text(facts: RunFacts) -> str:
     return "\n\n".join([
         f"# 这次迁移\n\n{facts.package} 从 {facts.from_version} 升级到 {facts.to_version}.",
         "# 评分没有通过的检查\n\n" + ("\n\n".join(checks) or "(全部通过了)"),
+        "# 报错里提到的名字, 在代码里现在的样子\n\n" + ("\n".join(facts.code) or "(没有找到, 或者工作区已经不在了)"),
         f"# agent 的最终报告\n\n{facts.final_report or '(没有最终报告)'}",
         "# agent 调用过的工具 (最后的部分)\n\n" + "\n".join(facts.tool_calls),
     ])
@@ -121,16 +148,30 @@ def reflect(run_dir: Path, llm: LLMClient, store_dir: Path = MEMORIES_DIR,
     store = MemoryStore.load(store_dir)
     if files is None:
         files = _workspace_files(facts.workdir)
+    messages = [m for c in facts.failed_checks for m in (c.get("data") or {}).get("failure_messages", {}).values()]
+    facts = dataclasses.replace(facts, code=code_evidence(quoted_names(messages), files))
 
     existing = [c for c in store.cards if c.applies_to(facts.package, facts.from_version, facts.to_version)]
     system = render(REFLECT_PROMPT, {"existing": "\n".join(
         f"{c.index_line()} 触发条件: {c.trigger.pattern if c.trigger else '无'}" for c in existing) or "(还没有)"})
     response = llm.create(system.text, [], [{"role": "user", "content": facts_text(facts)}])
     result = ReflectionResult(raw=response.text)
+    try:
+        if response.stop_reason == "max_tokens":
+            raise ReflectError(f"反思的输出超出了长度上限, 被截断了 (写到: ...{response.text[-200:]})")
+        proposals = parse_proposals(response.text)
+    except ReflectError as e:
+        # 失败也留下记录: 模型的原始输出, 失败的原因. 人事后能看到它想说什么
+        if save:
+            TraceFiles(run_dir).write_json(REFLECTION_FILE, {"at": now_iso(), "prompt": {"name": system.name, "sha256": system.sha256},
+                                                             "raw": response.text, "error": str(e)})
+        raise
 
     tokens = specific_tokens(facts.diff, facts.failed_details(), facts.task_id, facts.repo_url, facts.package)
+    # 报错里带引号的名字也是原仓库的细节: 冒烟测试的运行上, v1 的输出里写了 status.progress, _insert_time 这些别名
+    tokens |= {name.lower() for name in quoted_names(messages)}
     check_names = ",".join(c["name"] for c in facts.failed_checks)
-    for data in parse_proposals(response.text)[:MAX_CARDS]:
+    for data in proposals[:MAX_CARDS]:
         card, problems = _build_card(data, facts, check_names)
         if card is not None:
             problems += find_specifics(card, tokens) + check_trigger(card, files)

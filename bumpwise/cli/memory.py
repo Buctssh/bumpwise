@@ -10,10 +10,12 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 from pathlib import Path
 
 from ..config import Settings
 from ..learning import ReflectError, ValidateError, reflect, validate_card
+from ..learning.reflect import REFLECT_MAX_TOKENS
 from ..llm import create_llm_client
 from ..memory import DEPRECATED, DRAFT, VALIDATED, CardError, MemoryStore, save_card
 from ..task.workspace import LocalWorkspaceProvider
@@ -81,7 +83,8 @@ def _show(args: argparse.Namespace) -> int:
 
 
 def _reflect(args: argparse.Namespace) -> int:
-    settings = _load_settings(args)
+    # 反思的输出更长 (thinking 也算在上限里), 用单独的上限
+    settings = dataclasses.replace(_load_settings(args), max_tokens=REFLECT_MAX_TOKENS)
     result = reflect(args.run_dir, create_llm_client(settings), store_dir=settings.memories_dir, save=not args.dry_run)
     prefix = "(试运行, 没有保存) " if args.dry_run else ""
     for card in result.created:
