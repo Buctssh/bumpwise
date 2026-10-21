@@ -76,11 +76,14 @@ def check_visible_tests(report: PytestReport | None, env: Environment, task: Tas
 
 # ============================================================================ 2. 来自源代码的废弃警告
 
-def check_source_warnings(report: PytestReport | None, evaluation: EvaluationSpec) -> CheckResult:
+def check_source_warnings(report: PytestReport | None, evaluation: EvaluationSpec, package: str = "") -> CheckResult:
+    """package: 被迁移的依赖. 只有提到它的废弃警告才算失败: connect-eaas-core 的源代码用了 distutils 的版本类,
+    参考答案里也有这条废弃警告, 它和迁移无关, 不能要求 agent 去修 (ADR-027 的题目检查发现的). 其他的废弃警告算作提醒"""
     if report is None or not report.ran:
         return CheckResult("source_warnings", SKIP, "原有测试没有正常运行, 无法统计警告")
     from_source = report.warnings_from(evaluation.source)
-    deprecations = [w for w in from_source if any(hint in w.category for hint in _DEPRECATION_HINTS)]
+    deprecations = [w for w in from_source if any(hint in w.category for hint in _DEPRECATION_HINTS)
+                    and (not package or package.lower() in f"{w.category} {w.message}".lower())]
     others = [w for w in from_source if w not in deprecations]
     data = {"deprecations": len(deprecations), "other_source_warnings": len(others), "all_warnings": len(report.warnings)}
     # 同一行代码的同一条警告, 每个测试都会触发一次, 去掉重复的

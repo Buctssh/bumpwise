@@ -56,7 +56,7 @@ def grade(
     after_surface = snapshot(env, evaluation.packages) if reference_surface is not None else None
     checks = [
         check_visible_tests(visible, env, task),
-        check_source_warnings(visible, evaluation),
+        check_source_warnings(visible, evaluation, task.migration.package),
         check_forbidden(env, evaluation),
         check_hidden_tests(env, evaluation.hidden_tests, hidden_files),
         check_api_surface(reference_surface, after_surface) if after_surface is not None

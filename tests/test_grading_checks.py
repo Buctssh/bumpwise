@@ -94,6 +94,17 @@ def test_deprecation_from_source_fails_and_is_deduplicated():
     assert result.status == FAIL and len(result.details) == 1
 
 
+def test_only_deprecations_of_the_migrated_package_fail():
+    # connect-eaas-core: distutils 的废弃警告和 pydantic 无关, 参考答案里也有, 只算提醒
+    report = PytestReport(exit_code=0, ran=True, warnings=[
+        WarningRecord("DeprecationWarning", "distutils Version classes are deprecated", "demo/helpers.py", 71, "t")])
+    assert check_source_warnings(report, EVALUATION, "pydantic").status == WARN
+    report.warnings.append(WarningRecord("PydanticDeprecatedSince20", "Support for class-based `config` is deprecated",
+                                         "demo/models.py", 3, "t"))
+    result = check_source_warnings(report, EVALUATION, "pydantic")
+    assert result.status == FAIL and result.details == ["demo/models.py:3 PydanticDeprecatedSince20: Support for class-based `config` is deprecated"]
+
+
 def test_only_test_file_warnings_pass():
     report = PytestReport(exit_code=0, ran=True, warnings=[warning("DeprecationWarning", "tests/test_a.py")])
     assert check_source_warnings(report, EVALUATION).status == PASS
