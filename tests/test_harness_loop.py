@@ -25,10 +25,12 @@ class FakeLLM:
         self._responses = list(responses)
         self.calls: list[list[dict[str, Any]]] = []
         self.tool_choices: list[str] = []
+        self.systems: list[str] = []
 
     def create(self, system: str, tools: list[dict], messages: list[dict], tool_choice: str = "auto") -> LLMResponse:
         self.calls.append(copy.deepcopy(messages))
         self.tool_choices.append(tool_choice)
+        self.systems.append(system)
         item = self._responses.pop(0)
         if isinstance(item, BaseException):
             raise item
