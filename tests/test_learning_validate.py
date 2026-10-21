@@ -175,3 +175,21 @@ def test_memory_judgement_against_the_known_pitfalls():
     assert "判断正确的: 2/3" in text and "和题目相关的: 1/3" in text and "漏推): 1/2" in text
     # 没有标注的卡片不计入, 但要提醒
     assert "没有标注行为变化的卡片" in build_report(records, "报告", card_labels={})
+
+
+def test_no_alert_when_the_card_is_irrelevant_by_the_labels():
+    # bank-learn 的 gpuhunt: 不相关的卡片被正确地去掉, 失败来自别的行为变化. 有标注时不告警, 没有标注时照常告警
+    ok = {"command": "x", "output": ""}
+    records = [dataclasses.replace(BASE, run_id="r1", verdict="fail", pitfalls=("float-to-int",),
+                                   memory=mem(dismissed={"alias": {"reason": "无关", **ok}}))]
+    assert "被去掉了" not in build_report(records, "报告", card_labels={"alias": "extra-alias"})
+    assert "被去掉了" in build_report(records, "报告")
+
+
+def test_cards_handled_from_the_listing_count_as_given():
+    # connect-eaas-core: 卡片没有匹配上, agent 在 list_experience 里看到以后自己去掉了它
+    ok = {"command": "x", "output": ""}
+    records = [dataclasses.replace(BASE, run_id="r1", pitfalls=("optional",),
+                                   memory=mem(matched={}, dismissed={"alias": {"reason": "无关", **ok}}))]
+    text = build_report(records, "报告", card_labels={"alias": "extra-alias"})
+    assert "| alias | extra-alias | 0 | 0 | 0 | 0 | 1 | 0 | 0 |" in text and "判断正确的: 1/1" in text

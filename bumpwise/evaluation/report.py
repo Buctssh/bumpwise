@@ -36,7 +36,7 @@ def build_report(records: Sequence[RunRecord], title: str, group_by: str = "arm"
     out += _comparison(groups)
     out += _per_task(groups)
     out += _checks(groups)
-    out += _experience(groups)
+    out += _experience(groups, card_labels or {})
     out += _memory_judgement(records, card_labels or {})
     out += _runs(records, key)
     return "\n".join(out).rstrip() + "\n"
@@ -128,8 +128,14 @@ def _checks(groups: dict[str, list[RunRecord]]) -> list[str]:
     return out + [""]
 
 
-def _experience(groups: dict[str, list[RunRecord]]) -> list[str]:
-    """每张经验卡片的统计, 以及需要人查看的信号 (ADR-024: 用监控代替逐条审核). 验证用的运行不算在内"""
+def _experience(groups: dict[str, list[RunRecord]], labels: Mapping[str, str]) -> list[str]:
+    """每张经验卡片的统计, 以及需要人查看的信号 (ADR-024: 用监控代替逐条审核). 验证用的运行不算在内.
+    labels (ADR-027): 卡片有标注, 题目也标出了行为变化, 而按标准答案卡片和这道题无关时, 不发出告警:
+    bank-learn 的 gpuhunt 里, agent 正确地去掉了不相关的卡片, 失败来自另一个行为变化 (小数截断), 告警却响了"""
+
+    def irrelevant(card: str, r: RunRecord) -> bool:
+        return bool(labels.get(card)) and bool(r.pitfalls) and labels[card] not in r.pitfalls
+
     records = [r for rs in groups.values() for r in rs if r.memory and not r.memory.get("forced")]
     cards = sorted({card for r in records for card in r.memory.get("available", [])})
     if not cards:
@@ -155,17 +161,17 @@ def _experience(groups: dict[str, list[RunRecord]]) -> list[str]:
                    f"| {pass_rate(used)[0]} | {pass_rate(unused)[0]} |")
         # 最危险的信号: agent 去掉了一条经验, 而这次运行最后没有通过. 它可能判断错了, 这条经验其实是对的
         for r in dismissed:
-            if outcome(r) == FAIL:
+            if outcome(r) == FAIL and not irrelevant(card, r):
                 reason = r.memory["dismissed"][card].get("reason", "")
                 alerts.append(f"{card} 在 {r.run_id} 里被去掉了 (理由: {reason}), 而这次运行没有通过评分. agent 可能判断错了, 请人查看")
         # 没有处理: agent 可能在报告里用文字拒绝了它 (第一次验证就是这样, docs/v7/validation-001.md), 统计里看不到
         for r in unresolved:
-            if outcome(r) == FAIL:
+            if outcome(r) == FAIL and not irrelevant(card, r):
                 alerts.append(f"{card} 在 {r.run_id} 里交给了 agent, 但它既没有确认也没有去掉, 而这次运行没有通过评分. "
                               "请人查看报告里怎样说它")
         # 确认采用了, 还是没有通过: 卡片的做法可能不对或者不完整
         for r in confirmed:
-            if outcome(r) == FAIL:
+            if outcome(r) == FAIL and not irrelevant(card, r):
                 action = r.memory["confirmed"][card].get("action", "")
                 alerts.append(f"{card} 在 {r.run_id} 里被确认采用了 (处理: {action}), 而这次运行没有通过评分. 卡片的做法可能不对, 请人查看")
     if alerts:
@@ -192,7 +198,8 @@ def _memory_judgement(records: Sequence[RunRecord], labels: Mapping[str, str]) -
             if card not in r.memory.get("available", []):
                 continue
             relevant = labels[card] in r.pitfalls
-            given = card in r.memory.get("matched", {}) or card in r.memory.get("recalled", [])
+            # 交给了 agent: 匹配上的, 查看过的, 或者它在列表里看到以后自己做了处理的 (connect-eaas-core 就是这样去掉的)
+            given = any(card in r.memory.get(key, {}) for key in ("matched", "recalled", "confirmed", "dismissed"))
             totals["relevant"] += relevant
             if not given:
                 missed += relevant
