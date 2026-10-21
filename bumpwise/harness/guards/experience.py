@@ -25,15 +25,16 @@ class ExperienceGuard(Guard):
 
     def after_call(self, outcome: CallOutcome) -> str | None:
         call = outcome.call
-        if outcome.is_error:
-            return None
-        if call.name == READ_FILE.name:
+        if call.name == READ_FILE.name and not outcome.is_error:
             cards = self._session.push_for(call.args.get("path", ""))
             if not cards:
                 return None
             # 附在 read_file 的结果后面: 经验和它说的那个文件放在一起, 模型才知道说的是这里
             body = "\n\n".join(card.render() for card in cards)
             return f"这个文件和下面的经验有关. 经验不一定适用, 先按\"怎样验证\"确认:\n\n{body}"
+        if call.name == RUN_COMMAND.name:
+            # 记下每一条执行过的命令和输出: agent 去掉一条经验时, 要用其中一条作为证据 (ADR-024)
+            self._session.record_command(call.args.get("command", ""), outcome.content)
         if call.name == RUN_COMMAND.name and is_test_command(call.args.get("command", ""), self._test_command):
             # 只记下来, 不在这里提醒: 提醒放在下一轮开始之前, 单独成段, 不和测试的输出混在一起
             if tests_all_passed(outcome.content):

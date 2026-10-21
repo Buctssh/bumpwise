@@ -280,9 +280,11 @@ def _run_agent(
 
     loop = AgentLoop(
         llm=llm,
-        registry=build_default_registry(),
+        # 经验的工具只在有可以用的经验时注册: 没有经验的运行, 工具定义和以前完全一样
+        registry=build_default_registry(experience=session is not None and bool(session.cards)),
         policy=policy,
-        ctx=ToolContext(env=env, command_timeout=settings.command_timeout, max_output_chars=settings.max_output_chars),
+        ctx=ToolContext(env=env, command_timeout=settings.command_timeout, max_output_chars=settings.max_output_chars,
+                        experience=session),
         max_turns=max_turns,
         # 同一个 on_event: 准备阶段和 agent 阶段的事件, 按时间顺序写进同一个 events.jsonl
         on_event=on_event,
