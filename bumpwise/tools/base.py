@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ..env import Environment
+from ..memory import ExperienceSession
 
 
 # 所有工具参数的基类：不允许出现未定义的参数（extra="forbid"）。
@@ -27,6 +28,7 @@ class ToolContext:
     env: Environment        # 工具通过它执行命令,读写文件
     command_timeout: float  # 命令的默认超时时间(秒)
     max_output_chars: int   # 返回给模型的内容最多多少字符
+    experience: ExperienceSession | None = None     # 这次运行的经验 (V7), 经验的工具用它. 没有启用记忆时为 None
 
 
 class ToolError(Exception):
