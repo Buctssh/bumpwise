@@ -1,0 +1,38 @@
+# 构造的题目 (ADR-027): 仓库的源代码在 tasks/synthetic/inventory-sync/, 准备工作区时现建.
+# 只使用经验, 不提炼经验 (origin = "synthetic")
+id = "inventory-sync-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "仓库同步的小库: extra='allow' 的模型带别名, ERP 的代码用字段名构造. 测试 cortex 学到的卡片能不能迁移到别的仓库"
+origin = "synthetic"
+
+[repo]
+url = "synthetic:inventory-sync"
+base_commit = "7b0b1ec40da8cb3a470cf4c61286aca61e31270e"
+
+[environment]
+python = "3.12"
+install = ['python -m pip install -e . "pytest>=7.2,<8"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+test_command = "python -m pytest -q"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = '"pydantic>=1.10,<2"'
+new = '"pydantic>=2,<3"'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["inventory_sync"]
+packages = ["inventory_sync"]
+forbidden = ["parse_obj(", ".dict(", "class Config:", "@validator"]
+# 埋下的行为变化 (docs/v7/pitfalls.py 里实验确认过的): 前一个是静默的, 只有隐藏测试能发现; 后一个会让可见的测试失败
+pitfalls = ["extra-allow-alias-by-name", "optional-no-default"]
+
+[evaluation.hidden_tests]
+commit = "1403e81e2745c9be2ec66d0a3a4c42f44ddb188b"
+paths = ["tests/test_behavior.py"]

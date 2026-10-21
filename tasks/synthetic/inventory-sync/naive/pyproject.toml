@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inventory-sync"
+version = "0.3.0"
+description = "Sync stock levels between the warehouse API and the internal ERP tables"
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=2,<3",
+]
+
+[tool.setuptools]
+packages = ["inventory_sync"]

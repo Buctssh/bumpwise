@@ -8,11 +8,11 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import evaluate, grade, memory, run, show
+from . import evaluate, grade, memory, run, show, task
 from .errors import SetupError
 
 # 新增子命令: 写一个提供 add_parser 和 execute 的模块, 再加到这里
-COMMANDS = {"run": run, "show": show, "grade": grade, "eval": evaluate, "memory": memory}
+COMMANDS = {"run": run, "show": show, "grade": grade, "eval": evaluate, "memory": memory, "task": task}
 
 
 def build_parser() -> argparse.ArgumentParser:
