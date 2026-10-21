@@ -18,6 +18,7 @@ ALLOWED: dict[str, set[str]] = {
     "config": set(),
     "env": set(),                                                        # 执行平面的接口和实现
     "llm": {"config"},                                                   # 模型接入
+    "memory": {"config"},                                                # 长期记忆: 经验卡片的格式, 存储, 选择 (V7)
     "tools": {"env"},                                                    # agent 的工具, 通过 env 操作
     "harness": {"config", "env", "llm", "tools"},                        # agent 运行时
     "task": {"config", "env", "harness"},                                # 题目, 工作区, 准备流水线 (不知道模型的存在)
