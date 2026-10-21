@@ -10,7 +10,9 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 
 class TaskError(Exception):
@@ -23,8 +25,12 @@ class _Spec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+# 构造的题目 (ADR-027) 的仓库地址写成 synthetic:<名字>, 源代码在 tasks/synthetic/<名字>/ 下, 准备工作区时现建
+SYNTHETIC_PREFIX = "synthetic:"
+
+
 class RepoSpec(_Spec):
-    url: str = Field(min_length=1, description="仓库地址, 可以是远程地址, 也可以是本地路径")
+    url: str = Field(min_length=1, description="仓库地址, 可以是远程地址, 本地路径, 或者 synthetic:<名字> (构造的题目)")
     base_commit: str = Field(pattern=r"^[0-9a-f]{40}$", description="起点提交的完整哈希")
 
 
@@ -80,16 +86,27 @@ class EvaluationSpec(_Spec):
     packages: list[str] = Field(min_length=1, description="要比较接口表面的包")
     forbidden: list[str] = Field(default_factory=list, description="迁移完成后, 源代码中不应该再出现的旧写法 (按字符串原样匹配)")
     hidden_tests: HiddenTestsSpec | None = None
+    # 这道题包含的已知行为变化 (ADR-027), 和卡片的 evidence.pitfall 对应. 统计时用来判断卡片和这道题相关不相关
+    pitfalls: list[str] = Field(default_factory=list)
 
 
 class TaskSpec(_Spec):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$", description="题目编号, 也会出现在目录名和运行记录里")
     description: str = ""
+    # real: 真实的仓库, 可以从它的运行里提炼经验; synthetic: 构造的仓库, 只使用经验, 不提炼 (ADR-027)
+    origin: Literal["real", "synthetic"] = "real"
     repo: RepoSpec
     environment: EnvironmentSpec
     migration: MigrationSpec
     budget: BudgetSpec | None = None                # 不写时用配置里的默认预算
     evaluation: EvaluationSpec | None = None        # 只有评测题目才有, agent 永远用不到它
+
+    @model_validator(mode="after")
+    def _synthetic_matches_origin(self) -> "TaskSpec":
+        # 两个地方说的必须一致: 仓库是构造的, 题目就是构造的, 反过来也一样
+        if self.repo.url.startswith(SYNTHETIC_PREFIX) != (self.origin == "synthetic"):
+            raise ValueError(f"origin = {self.origin!r} 和仓库地址 {self.repo.url!r} 不一致: 构造的题目, 地址写成 {SYNTHETIC_PREFIX}<名字>")
+        return self
 
 
 def load_task(path: Path) -> TaskSpec:

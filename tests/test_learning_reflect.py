@@ -259,6 +259,18 @@ def test_deprecated_cards_are_shown_with_the_reason_and_never_merged(run_dir, tm
     assert [c.id for c in result.created] == ["pydantic2-extra-allow-field-name"] and not result.merged
 
 
+def test_synthetic_tasks_are_never_reflected_on(tmp_path):
+    # 构造的题目, 问题是我们自己埋的: 成功或失败都不提炼 (ADR-027). 模型一次都不会被调用
+    writer = TraceWriter(tmp_path / "runs", "run-s")
+    writer.write_meta({**META, "task": {**META["task"], "id": "inventory-sync-pydantic2", "origin": "synthetic"}})
+    writer.write_json("grade.json", GRADE)
+    writer.close()
+    llm = model(GOOD)
+    with pytest.raises(ReflectError, match="构造的题目"):
+        reflect(writer.dir, llm, store_dir=tmp_path / "memories", files=FILES)
+    assert llm.calls == [] and not (tmp_path / "memories").exists()
+
+
 def test_common_names_are_not_clues():
     # 冒烟测试的报错里有 'json', 'data': 它们出现在大部分文件里, README 和无关的类占满了名额
     from bumpwise.learning.reflect import enclosing_classes

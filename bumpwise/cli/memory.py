@@ -4,6 +4,7 @@
     python -m bumpwise memory reflect <运行目录>               对一次运行做反思, 提炼经验的草稿 (调用一次模型)
     python -m bumpwise memory validate <id>                   在学到它的题目上带着它重跑一次 (一次完整的运行, 要花钱)
     python -m bumpwise memory set-status <id> <状态>          人的决定: 抽查之后确认, 或者废弃一张卡片
+    python -m bumpwise memory label <id> <行为变化>            人的标注: 这张卡片说的是哪一个已知的行为变化 (ADR-027, 只用于统计)
 
 人的角色是监督, 不是生产: 卡片由反思写出, 由验证升级; 人在抽查, 或者评测报告里出现"需要人查看"时才介入.
 """
@@ -12,6 +13,8 @@ from __future__ import annotations
 import argparse
 import dataclasses
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from ..config import Settings
 from ..learning import ReflectError, ValidateError, reflect, validate_card
@@ -42,11 +45,14 @@ def add_parser(commands: argparse._SubParsersAction) -> None:
     status.add_argument("id")
     status.add_argument("status", choices=[DRAFT, VALIDATED, DEPRECATED])
     status.add_argument("--reason", default="", help="废弃时必须写明原因")
+    label = sub.add_parser("label", help="人的标注: 这张卡片说的是哪一个已知的行为变化 (和题目的 evaluation.pitfalls 对应)")
+    label.add_argument("id")
+    label.add_argument("pitfall", help="例如 extra-allow-alias-by-name")
 
 
 def execute(args: argparse.Namespace) -> int:
     handler = {"list": _list, "show": _show, "reflect": _reflect, "validate": _validate,
-               "set-status": _set_status}[args.memory_command]
+               "set-status": _set_status, "label": _label}[args.memory_command]
     try:
         return handler(args)
     except (CardError, ReflectError, ValidateError) as e:
@@ -123,4 +129,20 @@ def _set_status(args: argparse.Namespace) -> int:
                                       "deprecated_reason": args.reason if args.status == DEPRECATED else ""})
     save_card(type(card).model_validate(updated.model_dump()), Settings.memories_dir)
     print(f"{card.id}: {card.status} → {args.status}")
+    return 0
+
+
+def _label(args: argparse.Namespace) -> int:
+    card = _store().get(args.id)
+    if card is None:
+        raise SetupError(f"没有这张卡片: {args.id}")
+    evidence = card.evidence.model_copy(update={"pitfall": args.pitfall})
+    updated = card.model_copy(update={"evidence": evidence})
+    # 重新校验一次: 标签的格式 (小写字母, 数字和 -) 由 Evidence 检查
+    try:
+        checked = type(card).model_validate(updated.model_dump())
+    except ValidationError:
+        raise SetupError(f"标签 {args.pitfall!r} 的格式不对: 只能有小写字母, 数字和 -") from None
+    save_card(checked, Settings.memories_dir)
+    print(f"{card.id}: pitfall = {args.pitfall}")
     return 0

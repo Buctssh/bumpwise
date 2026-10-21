@@ -185,7 +185,9 @@ def test_ctrl_c_only_interrupts_grading(run_dir, fake_grading, monkeypatch):
 def test_private_paths(tmp_path):
     provider = LocalWorkspaceProvider(tmp_path / "workspace")
     paths = private_paths(provider, tmp_path / "runs")
-    assert paths == [str((tmp_path / "workspace" / "_mirrors").resolve()),
+    # 构造的题目 (ADR-027): 现建的仓库和源代码里有参考答案 (源代码在 tasks/ 下, 本来就在列表里)
+    assert paths == [str((tmp_path / "workspace" / "_mirrors").resolve()), str((tmp_path / "workspace" / "_synthetic").resolve()),
+                     str((PROJECT_ROOT / "tasks" / "synthetic").resolve()),
                      str((PROJECT_ROOT / "tasks").resolve()), str((tmp_path / "runs").resolve())]
 
 

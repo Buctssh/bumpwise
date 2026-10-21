@@ -60,6 +60,9 @@ class Evidence(_Spec):
     check: str = Field("", description="哪一项检查发现的问题, 比如 hidden_tests")
     author: Literal["model", "human"]
     validation_runs: list[str] = Field(default_factory=list, description="验证过这张卡片的运行 (带着它在学到它的题目上重跑)")
+    # 人在抽查时标注: 这张卡片说的是哪一个已知的行为变化 (和题目的 evaluation.pitfalls 对应, ADR-027).
+    # 统计时用它判断"卡片和这道题相关吗". 只用于评测, 不进 prompt, 也不影响记忆的版本号
+    pitfall: str = Field("", pattern=r"^[a-z0-9-]*$")
 
 
 class Card(_Spec):
@@ -156,5 +159,7 @@ def card_to_toml(card: Card) -> str:
     evidence = card.evidence
     lines += ["", "[evidence]"] + [f"{key} = {value(getattr(evidence, key))}" for key in
                                    ("learned_from", "source_runs", "check", "author", "validation_runs")]
+    if evidence.pitfall:
+        lines.append(f"pitfall = {value(evidence.pitfall)}")
     return "\n".join(lines) + "\n"
 

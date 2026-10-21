@@ -95,6 +95,9 @@ def load_facts(run_dir: Path) -> RunFacts:
     migration = task.get("migration")
     if not task.get("id") or not migration:
         raise ReflectError("只能对照着题目运行的结果做反思: 要知道题目, 依赖和版本")
+    if task.get("origin") == "synthetic":
+        # 构造的题目, 问题是我们自己埋的: 从它学到的经验等于我们写的答案 (ADR-027)
+        raise ReflectError(f"{task['id']} 是构造的题目, 只使用经验, 不提炼经验")
     grade_path = run_dir / GRADE_FILE
     if not grade_path.is_file():
         raise ReflectError("这次运行还没有评分, 先用 grade 命令评分")

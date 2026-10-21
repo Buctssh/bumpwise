@@ -7,6 +7,7 @@
 
 本地实现的目录结构:
     <root>/_mirrors/<名字>.git      远程仓库的本地镜像. 第一次使用时克隆, 之后所有运行共用, 只需要 fetch 缺少的提交
+    <root>/_synthetic/<名字>        构造的题目 (ADR-027) 现建的仓库, 镜像从这里克隆. 每次都重建, 内容和哈希都是确定的
     <root>/runs/<运行编号>/repo      每次运行一份全新的仓库, 互不影响, 运行结束后保留, 方便事后检查.
                                      只包含起点提交和它之前的历史: 起点之后的提交 (包括参考答案) 不能出现在工作区里
 """
@@ -26,6 +27,7 @@ from typing import Protocol
 
 from ..env import Environment, LocalEnvironment
 from .spec import TaskSpec
+from .synthetic import SYNTHETIC_DIR, SyntheticError, build, synthetic_name
 
 
 # 虚拟环境的位置由工作区决定: 这是"工作区的布局", 和怎样创建虚拟环境 (流水线) 是两回事
@@ -86,8 +88,10 @@ def _git(*args: str, cwd: Path | None = None) -> str:
 class LocalWorkspaceProvider:
     """在本机的目录里准备工作区, 只能用于可信的仓库"""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, synthetic_source: Path = SYNTHETIC_DIR) -> None:
         self._mirrors = Path(root) / "_mirrors"
+        self._synthetic = Path(root) / "_synthetic"
+        self._synthetic_source = Path(synthetic_source)
         self._runs = Path(root) / "runs"
 
     def create(self, task: TaskSpec, run_id: str) -> Workspace:
@@ -122,16 +126,31 @@ class LocalWorkspaceProvider:
             return {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
 
     def private_paths(self) -> list[str]:
-        # 本地的工作区和镜像在同一台机器上, agent 的命令不受路径限制 (ADR-009), 能访问到镜像
-        return [str(self._mirrors.resolve())]
+        # 本地的工作区和镜像在同一台机器上, agent 的命令不受路径限制 (ADR-009), 能访问到镜像.
+        # 构造的题目的源代码和现建的仓库里有参考答案, 也一样不能访问
+        return [str(p.resolve()) for p in (self._mirrors, self._synthetic, self._synthetic_source)]
 
     # ------------------------------------------------------------------ 镜像
     
     def _ensure_mirror(self, url: str, commit: str) -> Path:
         """返回 url 对应的本地镜像, 并保证其中有 commit. 第一次使用时克隆"""
         mirror = self._mirrors / f"{_mirror_name(url)}.git"
+        source = url
+        name = synthetic_name(url)
+        if name is not None:
+            # 构造的题目: 先现建仓库, 镜像从它克隆. 源代码改过的话, 新的提交会在下面被 fetch 进镜像
+            try:
+                source = str(build(name, self._synthetic, self._synthetic_source).path)
+            except SyntheticError as e:
+                raise WorkspaceError(str(e)) from None
         if not mirror.exists():
-            self._clone_mirror(url, mirror)
+            self._clone_mirror(source, mirror)
+        elif name is not None:
+            # 现建的仓库每次都可能不同: 整个刷新一遍 (镜像的 fetch 规则是 +refs/*:refs/*)
+            _git("fetch", "--quiet", "--prune", "origin", cwd=mirror)
+        if name is not None and not _has_commit(mirror, commit):
+            raise WorkspaceError(f"构造的题目 {name} 里没有提交 {commit}: 源代码改过的话, 提交的哈希会变, "
+                                 f"用 python -m bumpwise task hashes {name} 查看新的哈希, 更新题目文件")
         if not _has_commit(mirror, commit):
             # 起点提交不一定在任何分支上 (比如 cortex 的提交在作者的功能分支上, 或者分支后来被删了), 单独 fetch 这个提交
             # 提交在远程也不存在时, fetch 本身就会失败 (git 报 "not our ref"), 也要转成同一句提示:

@@ -51,6 +51,17 @@ def test_set_status(memories, capsys):
     assert saved.status == DEPRECATED and saved.deprecated_reason == "用了以后成功率下降"
 
 
+def test_label(memories, capsys):
+    # 人的标注只写进证据: 记忆的版本号不变 (agent 看到的内容没变)
+    from bumpwise.memory import MemoryStore
+    save_card(card(), memories)
+    before = MemoryStore.load(memories).version()
+    assert main(["memory", "label", "pydantic2-alias", "extra-allow-alias-by-name"]) == 0
+    saved = load_card(memories / "pydantic2-alias.toml")
+    assert saved.evidence.pitfall == "extra-allow-alias-by-name" and MemoryStore.load(memories).version() == before
+    assert main(["memory", "label", "pydantic2-alias", "Bad Label"]) == 1        # 格式不对: 小写字母, 数字和 -
+
+
 def test_unknown_card(memories, capsys):
     assert main(["memory", "show", "nope"]) == 1 and "没有这张卡片" in capsys.readouterr().err
 
