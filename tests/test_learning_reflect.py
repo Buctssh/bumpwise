@@ -91,7 +91,7 @@ def test_good_card_is_saved_as_a_draft(run_dir, tmp_path):
     assert card.evidence.learned_from == ["cortex-pydantic2"] and card.evidence.source_runs == ["run-7"]
     assert card.evidence.check == "hidden_tests" and card.evidence.author == "model"
     record = json.loads((run_dir / REFLECTION_FILE).read_text(encoding="utf-8"))
-    assert record["created"] == ["pydantic2-alias-field-name"] and record["prompt"]["name"] == "reflect_v2"
+    assert record["created"] == ["pydantic2-alias-field-name"] and record["prompt"]["name"] == "reflect_v3"
     # 反思的用量也记下来: 题库的测试要算提炼的成本
     assert set(record["usage"]) == {"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"}
 
@@ -203,8 +203,62 @@ def test_model_sees_the_code_behind_the_names_in_the_failure(run_dir, tmp_path):
     llm = model()
     reflect(run_dir, llm, store_dir=tmp_path / "memories", files=FILES)
     message = llm.calls[0][0]["content"]
-    assert "# 报错里提到的名字, 在代码里现在的样子" in message
+    assert "# 这些名字在迁移之后的代码里的样子" in message
     assert "client/models/issues.py:2: insert_time: int = Field(alias='_insert_time')" in message
+
+
+# v1 的代码: 字段那一行看不到配置, 真正的条件 (extra='allow') 在类的 Config 里
+BEFORE = [
+    ("tests/test_issues.py", "def test_x():\n    assert data['_insert_time'] == 1\n"),
+    ("client/models/issues.py",
+     "from pydantic import BaseModel, Field\n\n\n"
+     "class IssueRecord(BaseModel):\n"
+     "    insert_time: int = Field(None, alias='_insert_time')\n"
+     "    name: str = None\n\n"
+     "    class Config:\n"
+     "        extra = 'allow'\n\n\n"
+     "class Other(BaseModel):\n"
+     "    x: int = 1\n"),
+]
+
+
+def test_model_sees_the_whole_class_before_the_migration(run_dir, tmp_path):
+    # 第一次验证失败的根源: v2 只看到字段那一行, 在适用条件里猜了一个代码里没有的配置 (docs/v7/validation-001.md).
+    # v3 给出迁移之前, 这些名字所在的类的完整定义, 包括嵌套的 class Config
+    grade = json.loads((run_dir / "grade.json").read_text(encoding="utf-8"))
+    grade["checks"][1]["data"]["failure_messages"] = {"t": "Right contains 1 more items:\n{'_insert_time': 100}"}
+    (run_dir / "grade.json").write_text(json.dumps(grade, ensure_ascii=False), encoding="utf-8")
+    llm = model()
+    reflect(run_dir, llm, store_dir=tmp_path / "memories", files=FILES, before_files=BEFORE)
+    message = llm.calls[0][0]["content"]
+    section = message.split("# 报错里提到的名字, 在迁移之前的代码 (旧版本) 里所在的类")[1].split("# 这些名字在迁移之后")[0]
+    assert "client/models/issues.py:4-9:" in section and "   9|         extra = 'allow'" in section
+    assert "class Other" not in section                       # 不包含这些名字的类不给
+    # 源代码排在测试前面; 不在类里的, 只给那一行
+    assert section.index("client/models/issues.py") < section.index("tests/test_issues.py:2: assert data['_insert_time'] == 1")
+
+
+def test_long_classes_are_cut():
+    from bumpwise.learning.reflect import _CLASS_LINES, enclosing_classes
+    text = "class Big:\n" + "".join(f"    f{i} = {i}\n" for i in range(100)) + "    target = 'needle'\n"
+    out = enclosing_classes({"needle"}, [("big.py", text)])
+    assert out[0] == "big.py:1-102:" and len(out) == _CLASS_LINES + 2 and "后面的省略了" in out[-1]
+
+
+def test_common_names_are_not_clues():
+    # 冒烟测试的报错里有 'json', 'data': 它们出现在大部分文件里, README 和无关的类占满了名额
+    from bumpwise.learning.reflect import enclosing_classes
+    files = [(f"api/m{i}.py", f"class A{i}:\n    data = response.json()\n") for i in range(6)]
+    files.append(("models/issues.py", "class Issue:\n    t: int = Field(alias='_insert_time')\n"))
+    out = enclosing_classes({"data", "json", "_insert_time"}, files)
+    assert out[0] == "models/issues.py:1-2:" and not any(line.startswith("api/") for line in out)
+
+
+def test_trigger_is_checked_against_the_code_before_the_migration(run_dir, tmp_path):
+    # 触发条件写的是旧版本的写法 (class Config), 迁移之后的代码里已经没有了: 要在迁移之前的代码上检查
+    card = {**GOOD, "trigger_pattern": r"extra\s*=\s*'allow'"}
+    result = reflect(run_dir, model(card), store_dir=tmp_path / "memories", files=FILES, before_files=BEFORE, save=False)
+    assert result.created and not result.rejected
 
 
 def test_names_from_the_failure_count_as_repo_details(run_dir, tmp_path):

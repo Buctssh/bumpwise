@@ -121,9 +121,12 @@ def workspace_diff(env: Environment, start_commit: str) -> str:
 _MAX_FILE_BYTES = 200_000
 
 
-def workspace_files(env: Environment) -> list[tuple[str, str]]:
+def workspace_files(env: Environment, commit: str | None = None) -> list[tuple[str, str]]:
     """工作区里被 git 跟踪的文本文件 (路径, 内容). 匹配经验的触发条件 (runner), 检查反思写出的触发条件 (learning) 都用它.
+    commit: 读这个提交里的版本, 而不是工作区现在的文件. 反思要看迁移之前的代码 (agent 的起点), 见 learning/reflect.py.
     通过 env 读: 以后工作区在容器里, 这里不用改"""
+    if commit is not None:
+        return _files_at(env, commit)
     files = []
     for path in filter(None, git(env, "-c core.quotePath=false ls-files").splitlines()):
         try:
@@ -133,4 +136,15 @@ def workspace_files(env: Environment) -> list[tuple[str, str]]:
         if len(data) > _MAX_FILE_BYTES or b"\x00" in data[:8192]:
             continue
         files.append((path, data.decode("utf-8", errors="replace")))
+    return files
+
+
+def _files_at(env: Environment, commit: str) -> list[tuple[str, str]]:
+    """一个提交里的文本文件. 每个文件一条 git show: 工作区的仓库不大, 够用"""
+    files = []
+    for path in filter(None, git(env, f"-c core.quotePath=false ls-tree -r --name-only {commit}").splitlines()):
+        result = env.exec(f'git show "{commit}:{path}"', timeout=30)
+        if result.exit_code != 0 or len(result.output) > _MAX_FILE_BYTES or "\x00" in result.output[:8192]:
+            continue
+        files.append((path, result.output))
     return files

@@ -76,3 +76,15 @@ def test_workspace_diff_includes_commits_and_new_files(repo):
     diff = record.workspace_diff(env, start)
     assert "+x = 2" in diff                      # 已经提交的改动也在 (和起点比较, 不是和当前的 HEAD)
     assert "新文件.py" in diff and "+y = 1" in diff
+
+
+def test_workspace_files_at_a_commit(repo):
+    # 反思要看迁移之前的代码: 读起点提交里的版本, 而不是工作区现在的文件
+    start = git("rev-parse", "HEAD", cwd=repo)
+    (repo / "app.py").write_text("x = 2\n", encoding="utf-8")
+    (repo / "new.py").write_text("y = 1\n", encoding="utf-8")
+    git("add", "-A", cwd=repo)
+    git("commit", "-q", "-m", "change", cwd=repo)
+    env = LocalEnvironment(repo)
+    assert record.workspace_files(env, start) == [("app.py", "x = 1\n")]
+    assert dict(record.workspace_files(env))["app.py"].strip() == "x = 2"     # Windows 上写出的是 \r\n

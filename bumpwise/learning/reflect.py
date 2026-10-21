@@ -2,6 +2,7 @@
 
 输入 (都来自运行记录, 不访问 agent 当时的上下文):
     评分没有通过的检查: 包括隐藏测试的名字和报错. 这是训练时的"老师的反馈", agent 当时看不到它们;
+    报错里提到的名字所在的代码: 迁移之前 (agent 的起点) 它们所在的类的完整定义, 以及迁移之后的样子;
     agent 的最终报告, 以及它调用过的工具的摘要;
     已经有的经验 (避免重复提炼).
 输出: 卡片的草稿 (status = draft, 不会被使用), 经过 checks.py 的自动检查之后才保存. 和已有的卡片说同一件事的, 合并证据.
@@ -11,6 +12,7 @@
 """
 from __future__ import annotations
 
+import ast
 import dataclasses
 import json
 import re
@@ -30,13 +32,20 @@ from ..runner.grade import GRADE_FILE
 from .checks import check_trigger, find_specifics, merge_evidence, specific_tokens
 
 # v2: 加上"报错里提到的名字在代码里现在的样子", 要求解释和代码一致. v1 在冒烟测试的运行上, 只看到报错没看到代码,
-# 猜测"补默认值时别名被丢掉了", 而代码里别名一直都在 (docs/v7/reflection-check.md). v1 保留, 用于对照
-REFLECT_PROMPT = "reflect_v2"
+# 猜测"补默认值时别名被丢掉了", 而代码里别名一直都在 (docs/v7/reflection-check.md).
+# v3: 再加上迁移之前这些名字所在的类的完整定义 (包括配置). v2 只看到字段那一行, 看不到 extra='allow',
+# 于是在适用条件里猜了一个代码里没有的配置, 第一次验证因此失败 (docs/v7/validation-001.md). 旧的版本保留, 用于对照
+REFLECT_PROMPT = "reflect_v3"
 REFLECTION_FILE = "reflection.json"
 MAX_CARDS = 2           # 和 prompt 里的要求一致: 一次反思最多提炼几条. 多了往往是把一个问题拆碎了
 # 反思的输出上限: thinking 也算在里面. 冒烟测试的运行上, 默认的 8192 不够, 输出写到一半就停了. 暂定 (ADR-018)
 REFLECT_MAX_TOKENS = 16384
-_CODE_LINES = 40        # "代码现在的样子"最多给多少行
+_CODE_LINES = 40        # "迁移之后的样子"最多给多少行
+_BEFORE_LINES = 150     # "迁移之前所在的类"一共最多给多少行
+_CLASS_LINES = 60       # 其中一个类最多给多少行
+# 一个名字出现在多少个文件里就算太常见: 至少 3 个, 或者全部文件的 20%. 暂定 (ADR-018), 只来自冒烟测试的一次运行
+_COMMON_FILES = 3
+_COMMON_SHARE = 0.2
 _REPORT_CHARS = 6000    # agent 的最终报告最多给多少字符
 _CALLS = 80             # 工具调用的摘要最多给多少条 (最后的那些: 越往后越接近结论)
 _QUOTED = re.compile(r"""['"]([\w.\-]+)['"]""")
@@ -62,7 +71,9 @@ class RunFacts:
     tool_calls: list[str]
     diff: str
     workdir: str | None
-    code: list[str] = field(default_factory=list)      # 报错里提到的名字, 在代码里现在的样子 (路径:行号: 内容)
+    start_commit: str | None = None                     # agent 的起点, 也就是迁移之前的代码
+    code: list[str] = field(default_factory=list)      # 报错里提到的名字, 在迁移之后的代码里的样子 (路径:行号: 内容)
+    before: list[str] = field(default_factory=list)    # 迁移之前, 这些名字所在的类的完整定义 (带行号)
 
     def failed_details(self) -> list[str]:
         return [line for check in self.failed_checks for line in check.get("details", [])]
@@ -102,6 +113,7 @@ def load_facts(run_dir: Path) -> RunFacts:
         tool_calls=[_describe_call(c) for c in calls][-_CALLS:],
         diff=diff_path.read_text(encoding="utf-8") if diff_path.is_file() else "",
         workdir=meta.get("prepare", {}).get("workdir"),
+        start_commit=meta.get("prepare", {}).get("start_commit"),
     )
 
 
@@ -122,6 +134,58 @@ def code_evidence(names: set[str], files: list[tuple[str, str]] | None) -> list[
     return lines[:_CODE_LINES]
 
 
+def enclosing_classes(names: set[str], files: list[tuple[str, str]] | None) -> list[str]:
+    """这些名字所在的类的完整定义 (带行号): 字段那一行看不到类的配置, 而配置往往才是真正的条件 (比如 extra='allow').
+    只取包含这些名字的最外层的类, 嵌套的类 (比如 class Config) 跟着外层一起给出. 不在类里的, 只给那一行.
+    源代码排在测试前面: 名额有限时, 先给模型看被迁移的代码"""
+    if not names or files is None:
+        return []
+    # 太常见的名字 (比如报错里的 'json', 'data') 到处都有, 不是线索: 冒烟测试的运行上, 它们让 README 和无关的类
+    # 占满了名额, 真正相关的模型文件反而排不进来. 出现在太多文件里的名字去掉
+    frequency = {name: sum(name in text for _, text in files) for name in names}
+    clues = {name for name, n in frequency.items() if 0 < n <= max(_COMMON_FILES, len(files) * _COMMON_SHARE)}
+    # 包含的线索越多的文件越相关; 一样多时, 源代码在测试前面, Python 文件在其他文件 (README 等) 前面
+    def rank(f: tuple[str, str]) -> tuple:
+        return (-sum(name in f[1] for name in clues), "test" in f[0].lower(), not f[0].endswith(".py"), f[0])
+    out: list[str] = []
+    for path, text in sorted(files, key=rank):
+        lines = text.splitlines()
+        hits = [i for i, line in enumerate(lines, 1) if any(name in line for name in clues)]
+        if not hits:
+            continue
+        blocks = _class_blocks(text) if path.endswith(".py") else []
+        shown: set[int] = set()
+        for start, end in blocks:
+            if any(start <= i <= end for i in hits) and not any(start <= s <= end for s in shown):
+                body = [f"{n:>4}| {lines[n - 1]}" for n in range(start, min(end, start + _CLASS_LINES - 1) + 1)]
+                if end - start + 1 > _CLASS_LINES:
+                    body.append(f"    | ... (这个类一共 {end - start + 1} 行, 后面的省略了)")
+                out += [f"{path}:{start}-{end}:", *body]
+                shown.update(range(start, end + 1))
+        out += [f"{path}:{i}: {lines[i - 1].strip()[:200]}" for i in hits if i not in shown]
+        if len(out) >= _BEFORE_LINES:
+            break
+    return out[:_BEFORE_LINES]
+
+
+def _class_blocks(text: str) -> list[tuple[int, int]]:
+    """最外层的类 (模块的顶层, 以及函数里的) 的起止行号. 解析不了的文件 (比如还是旧语法) 返回空的列表"""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    blocks = []
+    def visit(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                start = min([child.lineno, *(d.lineno for d in child.decorator_list)])
+                blocks.append((start, child.end_lineno or child.lineno))
+            else:
+                visit(child)
+    visit(tree)
+    return blocks
+
+
 def facts_text(facts: RunFacts) -> str:
     """交给模型的用户消息"""
     checks = []
@@ -133,23 +197,32 @@ def facts_text(facts: RunFacts) -> str:
     return "\n\n".join([
         f"# 这次迁移\n\n{facts.package} 从 {facts.from_version} 升级到 {facts.to_version}.",
         "# 评分没有通过的检查\n\n" + ("\n\n".join(checks) or "(全部通过了)"),
-        "# 报错里提到的名字, 在代码里现在的样子\n\n" + ("\n".join(facts.code) or "(没有找到, 或者工作区已经不在了)"),
+        "# 报错里提到的名字, 在迁移之前的代码 (旧版本) 里所在的类\n\n"
+        + ("\n".join(facts.before) or "(没有找到, 或者工作区已经不在了)"),
+        "# 这些名字在迁移之后的代码里的样子\n\n" + ("\n".join(facts.code) or "(没有找到, 或者工作区已经不在了)"),
         f"# agent 的最终报告\n\n{facts.final_report or '(没有最终报告)'}",
         "# agent 调用过的工具 (最后的部分)\n\n" + "\n".join(facts.tool_calls),
     ])
 
 
 def reflect(run_dir: Path, llm: LLMClient, store_dir: Path = MEMORIES_DIR,
-            files: list[tuple[str, str]] | None = None, save: bool = True) -> ReflectionResult:
-    """对一次运行做反思. files 是学到经验的那个仓库的文件, 用来检查触发条件; 不传时从运行的工作区读取 (工作区不在了就不检查).
-    save=False 时只检查, 不保存卡片 (试运行)"""
+            files: list[tuple[str, str]] | None = None, save: bool = True,
+            before_files: list[tuple[str, str]] | None = None) -> ReflectionResult:
+    """对一次运行做反思. save=False 时只检查, 不保存卡片 (试运行).
+    files: 运行结束时工作区的文件; before_files: 迁移之前 (agent 的起点) 的文件. 不传时从运行的工作区读取.
+    触发条件写的是旧版本的写法, 所以在迁移之前的文件上检查; 读不到时退回到 files (工作区不在了就不检查)"""
     run_dir = Path(run_dir)
     facts = load_facts(run_dir)
     store = MemoryStore.load(store_dir)
     if files is None:
         files = _workspace_files(facts.workdir)
+    if before_files is None:
+        before_files = _workspace_files(facts.workdir, facts.start_commit) if facts.start_commit else None
+    if before_files is None:
+        before_files = files
     messages = [m for c in facts.failed_checks for m in (c.get("data") or {}).get("failure_messages", {}).values()]
-    facts = dataclasses.replace(facts, code=code_evidence(quoted_names(messages), files))
+    names = quoted_names(messages)
+    facts = dataclasses.replace(facts, code=code_evidence(names, files), before=enclosing_classes(names, before_files))
 
     existing = [c for c in store.cards if c.applies_to(facts.package, facts.from_version, facts.to_version)]
     system = render(REFLECT_PROMPT, {"existing": "\n".join(
@@ -177,7 +250,7 @@ def reflect(run_dir: Path, llm: LLMClient, store_dir: Path = MEMORIES_DIR,
     for data in proposals[:MAX_CARDS]:
         card, problems = _build_card(data, facts, check_names)
         if card is not None:
-            problems += find_specifics(card, tokens) + check_trigger(card, files)
+            problems += find_specifics(card, tokens) + check_trigger(card, before_files)
         if problems:
             result.rejected.append((data, problems))
             continue
@@ -239,7 +312,10 @@ def _describe_call(data: dict[str, Any]) -> str:
     return f"第 {data.get('turn')} 轮 {data.get('name')}: {flat}"
 
 
-def _workspace_files(workdir: str | None) -> list[tuple[str, str]] | None:
+def _workspace_files(workdir: str | None, commit: str | None = None) -> list[tuple[str, str]] | None:
     if not workdir or not Path(workdir).is_dir():
         return None
-    return record.workspace_files(LocalEnvironment(Path(workdir)))
+    try:
+        return record.workspace_files(LocalEnvironment(Path(workdir)), commit)
+    except record.RunnerError:
+        return None     # 提交不在了 (比如工作区被重新克隆过)
