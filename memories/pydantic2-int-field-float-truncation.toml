@@ -1,0 +1,21 @@
+id = "pydantic2-int-field-float-truncation"
+package = "pydantic"
+from_major = 1
+to_major = 2
+status = "draft"
+title = "int 字段收到小数浮点时 v1 截断、v2 报错"
+applies_when = "模型里声明了 int（或 Optional[int]）类型的字段，而输入数据中该字段可能以带小数的浮点数给出（如 1.5）。"
+symptom = "v1 下带小数的浮点数被静默截断成整数并解析成功；v2 下抛 ValidationError（int_from_float），导致整个模型/文档解析失败。"
+why_tests_miss = "原有测试的输入里这些字段都是整数或整值浮点，没有带小数的值；v1 的隐式截断也没有断言覆盖。"
+fix = "若要保留截断：在 pydantic 2 下用 field_validator(mode='before')（2.0+）或 Annotated[int, BeforeValidator(...)] 把 float 转成 int；若确定上游不会传小数，可接受 v2 的严格报错，但要先确认数据。"
+verify = "from typing import Optional\nfrom pydantic import BaseModel\n\nclass M(BaseModel):\n    count: Optional[int] = None\n\ntry:\n    print('ok', M(count=1.5).count)\nexcept Exception as e:\n    print('error', type(e).__name__)"
+
+[trigger]
+pattern = "^\\s*[A-Za-z_]\\w*\\s*:\\s*(?:Optional\\[\\s*int\\s*\\]|int\\b)"
+
+[evidence]
+learned_from = ["gpuhunt-pydantic2"]
+source_runs = ["20261021-160637-gpuhunt-pydantic2-88f0"]
+check = "hidden_tests"
+author = "model"
+validation_runs = []
