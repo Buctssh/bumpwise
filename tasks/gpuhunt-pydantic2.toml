@@ -1,0 +1,43 @@
+# 题目: gpuhunt 从 pydantic 1 迁移到 pydantic 2 (真实的仓库, 可以提炼经验)
+# 来源: docs/v0/gpuhunt.md. 涉及 pydantic 的只有 providers/oci.py 一个文件
+id = "gpuhunt-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "GPU 价格目录, 甲骨文云的价格接口用 pydantic 1 解析"
+
+[repo]
+url = "https://github.com/dstackai/gpuhunt.git"
+# Add AWS p5en instances (#245)
+base_commit = "176dfe543168c25cb393011fc9c4ff5c0d5874f8"
+
+[environment]
+python = "3.12"
+# pydantic 只在 oci 这组可选依赖里; dev 里有 pytest 和 requests-mock
+install = ['python -m pip install -e ".[oci,dev]"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+# 排除基线时就有问题的 3 个文件 (V0): test_verda 和 test_providers 缺少别的云厂商的依赖 (verda, boto3),
+# test_catalog_v1 的 2 个失败和 Windows 的换行符有关, 在 v1 下也失败
+test_command = "python -m pytest -q src/tests --ignore=src/tests/providers/test_verda.py --ignore=src/tests/providers/test_providers.py --ignore=src/tests/scripts/test_catalog_v1.py"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = 'pydantic>=1.10.10,<2.0.0'
+new = 'pydantic>=2,<3'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["src/gpuhunt"]
+packages = ["gpuhunt"]
+forbidden = ["parse_obj(", "parse_raw(", "class Config:"]
+# 小数截断: 甲骨文云的接口里 BM.DenseIO.E5.128 的磁盘 qty 是 81.6, v1 截断, v2 报错, 整个价格列表解析失败.
+# int | None 不写默认值: v2 里变成必填. 两者都没有警告, 原有的测试也发现不了 (V0)
+pitfalls = ["float-to-int-truncation", "optional-no-default"]
+
+[evaluation.hidden_tests]
+# 参考答案: 作者的 PR #247 "Upgrade to pydantic v2" 分支的最后一个提交
+commit = "0edc31267eeff577bf1052bb41408c588876a34e"
+paths = ["src/tests/providers/test_oci.py"]
