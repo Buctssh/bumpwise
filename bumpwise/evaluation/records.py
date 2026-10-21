@@ -9,21 +9,15 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..harness.guards.cadence import is_test_command
+from ..harness.guards.cadence import is_test_command, tests_all_passed
 from ..harness.trace import load_events, load_meta
 from ..runner.grade import GRADE_FILE
-from ..tools.shell import RUN_COMMAND, parse_result
-
-# pytest 最后一行的汇总, 例如 "210 passed, 16 warnings in 0.41s", "1 failed, 208 passed".
-# 只认 passed 和 failed / error 这几个词, 不解析完整的格式: 不同版本的 pytest, 汇总的写法略有不同
-_PASSED = re.compile(r"\b(\d+) passed\b")
-_FAILED = re.compile(r"\b\d+ (failed|errors?)\b")
+from ..tools.shell import RUN_COMMAND
 
 
 @dataclass(frozen=True)
@@ -102,13 +96,8 @@ def _test_progress(events: list[dict[str, Any]], test_command: str) -> tuple[int
         if e["event"] != "tool_result" or e["data"].get("id") not in commands:
             continue
         runs += 1
-        parsed = parse_result(e["data"].get("content", ""))
-        if parsed is None:
-            continue    # 超时之类, 不是正常执行完的结果
-        exit_code, output = parsed
-        # "全部通过"要同时满足: 退出码是 0, 有 passed, 没有 failed 和 error.
-        # 只看退出码不够: 管道会掩盖退出码 (004 第 1 轮). 只看 passed 也不够: "1 failed, 208 passed" 里也有 passed
-        if green is None and exit_code == 0 and _PASSED.search(output) and not _FAILED.search(output):
+        # "全部通过"的判断和经验的推送共用 (cadence.tests_all_passed), 两边不能不一致
+        if green is None and tests_all_passed(e["data"].get("content", "")):
             green = commands[e["data"]["id"]].get("turn")
     return green, runs
 

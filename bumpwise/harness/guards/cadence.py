@@ -5,8 +5,10 @@
 """
 from __future__ import annotations
 
+import re
+
 from ...tools.files import EDIT_FILE, WRITE_FILE
-from ...tools.shell import RUN_COMMAND
+from ...tools.shell import RUN_COMMAND, parse_result
 from .base import CallOutcome, Guard
 
 # 每修改多少次提醒一次. 003, 004 连续修改的阶段都在 10 轮以上, 6 次会在中间提醒一次. 以后用 V6 的评测数据来定
@@ -19,6 +21,23 @@ def is_test_command(command: str, test_command: str) -> bool:
     护栏和评测的统计 (evaluation/records.py) 都用它: 两边的判断必须一致, 否则护栏认为跑了测试, 统计却不算"""
     keyword = "pytest" if "pytest" in test_command else test_command
     return keyword in command
+
+
+# pytest 最后一行的汇总, 例如 "210 passed, 16 warnings in 0.41s", "1 failed, 208 passed".
+# 只认 passed 和 failed / error 这几个词, 不解析完整的格式: 不同版本的 pytest, 汇总的写法略有不同
+_PASSED = re.compile(r"\b(\d+) passed\b")
+_FAILED = re.compile(r"\b\d+ (failed|errors?)\b")
+
+
+def tests_all_passed(result: str) -> bool:
+    """run_command 的结果是不是"测试全部通过": 退出码是 0, 有 passed, 没有 failed 和 error.
+    只看退出码不够: 管道会掩盖退出码 (004 第 1 轮). 只看 passed 也不够: "1 failed, 208 passed" 里也有 passed.
+    评测的统计 (evaluation/records.py) 和经验的推送 (guards/experience.py) 都用它"""
+    parsed = parse_result(result)
+    if parsed is None:
+        return False    # 超时之类, 不是正常执行完的结果
+    exit_code, output = parsed
+    return exit_code == 0 and bool(_PASSED.search(output)) and not _FAILED.search(output)
 
 
 class TestCadenceGuard(Guard):
