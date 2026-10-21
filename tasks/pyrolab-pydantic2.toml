@@ -1,0 +1,42 @@
+# 题目: pyrolab 从 pydantic 1 迁移到 pydantic 2 (真实的仓库, 可以提炼经验)
+# 来源: BYUCamachoLab/pyrolab 的 PR #96 "Migrate to pydantic 2" (2026-10-05 合并). 找题的过程见 docs/v7/bank.md
+id = "pyrolab-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "实验室仪器的远程控制框架 (Pyro5), 配置文件是 YAML, 由 pydantic 1 的模型校验"
+
+[repo]
+url = "https://github.com/BYUCamachoLab/pyrolab.git"
+base_commit = "8aa249792b683f83558d85e3f8094ef02d79768c"
+
+[environment]
+python = "3.12"
+install = ['python -m pip install -e . pytest']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+# 去掉 2 个测试: 它们写死了只在 v1 下成立的东西, agent 改代码改不了. 作者的 PR 改了它们, 改过的版本在隐藏测试里:
+#   test_rename: 直接比较两个模型 (==). v2 比较时也比较私有属性, 名字不同的两个配置就不相等了
+#   test_misspelled_keys_are_rejected: 检查 v1 的错误信息 "extra fields not permitted", v2 的写法不同
+test_command = "python -m pytest -q --deselect tests/test_cli.py::test_rename --deselect tests/test_configure.py::test_misspelled_keys_are_rejected"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = '"pydantic >= 1.9.1, < 2.0.0",'
+new = '"pydantic>=2,<3",'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["pyrolab"]
+packages = ["pyrolab"]
+forbidden = ["parse_obj(", "parse_raw(", "class Config:", "@validator", "@root_validator", ".copy(deep"]
+# 数字到字符串: 用 v1 写的 YAML 配置里, version: 1.0 这样没加引号的值, v1 当成字符串, v2 报错.
+# 作者在 PR 里加了 coerce_numbers_to_str, 并新增了测试 test_numbers_are_accepted_where_text_is_expected
+pitfalls = ["number-to-str-coercion", "private-attr-equality", "root-validator"]
+
+[evaluation.hidden_tests]
+# 参考答案: PR #96 的 head
+commit = "21809c25eb7f387d47842ca8ef1e432448f791b4"
+paths = ["tests"]

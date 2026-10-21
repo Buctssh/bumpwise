@@ -10,6 +10,7 @@
 | gpuhunt | 真实 | float-to-int-truncation, optional-no-default | 不匹配 | 第一阶段: 学 |
 | connect-eaas-core | 真实 | optional-no-default, pydantic-internal-api | 不匹配 | 第一阶段: 学 |
 | maco | 真实 | implicit-optional-none-default, class-attribute-in-model, revalidate-instances | 不匹配 | 第一阶段: 学 |
+| pyrolab | 真实 | number-to-str-coercion, private-attr-equality, root-validator | 不匹配 | 补上 bank-use 的空白 (数字到字符串, 见 bank-use.md) |
 | inventory-sync | 构造 | extra-allow-alias-by-name, optional-no-default | 匹配 models.py | 卡片迁移到别的仓库 (class Config 写法) |
 | crm-contacts | 构造 | extra-allow-alias-by-name, number-to-str-coercion, optional-no-default | 匹配 models.py | 卡片迁移 (类参数 extra=Extra.allow 的写法) |
 | weather-feed | 构造 | number-to-str-coercion, optional-no-default | 匹配 models.py | 卡片会推送, 但**不相关** (有别名, 没有 extra='allow'): 应该去掉 |
@@ -30,6 +31,7 @@
 | gpuhunt | 94 passed | 94 passed (只有警告) | 1 个失败 (小数截断) | (真实的题目没有) | 通过 |
 | connect-eaas-core | 337 passed | 收集失败 | 4 个失败 | (真实的题目没有) | 通过 |
 | maco | 11 passed | 收集失败 | 1 个失败 | (真实的题目没有) | 通过 |
+| pyrolab | 397 passed | 2 failed | 7 个失败 | (真实的题目没有) | 通过 |
 | inventory-sync | 7 passed | 5 failed | 3 个失败 | 可见通过, 隐藏失败 | 通过 |
 | weather-feed | 4 passed | 4 failed | 2 个失败 | 可见通过, 隐藏失败 | 通过 |
 | billing-calc | 6 passed | 收集失败 | 1 个失败 | 可见通过, 隐藏失败 | 通过 |
@@ -59,6 +61,8 @@
 | givenergy-local, zaptec | 淘汰 | Home Assistant 的插件, 测试要装整个 Home Assistant |
 | scanspec #127 | 淘汰 | 可见的测试直接比较 v1 生成的 JSON Schema 文件 |
 | **connect-eaas-core #128** | 采用 | 题目检查发现: 缺少 typing-inspect (fastapi-utils 在 v2 下要用, 作者的 PR 也加上了), 21 个测试写死了 "/" 路径, 1 个测试在测试里比较 model == dict; 评分的 source_warnings 也因此改成只看 pydantic 的废弃警告 |
+| QuantConnect/lean-cli #634 | 淘汰 | 起点已经通过 pydantic.v1 兼容层跑在 v2 上, 升级后什么都不会坏; 加了 coerce_numbers_to_str 却没有测试检查它 |
+| **pyrolab #96** | 采用 | 为了补上数字到字符串 (bank-use 里唯一没有卡片的变化) 专门找的: YAML 配置里没加引号的 `version: 1.0`, 作者新增了检查它的测试. 2 个原有测试写死了 v1 的错误信息和 v1 的模型相等, 从可见测试里去掉 |
 | **Maco (10becfc)** | 采用 | 题目检查发现: 第二个包 model_setup 也声明了 pydantic 的版本 (加了一条 edits); 1 个测试依赖 v1 会重新校验模型实例 (revalidate_instances), 作者没有保留这个行为而是改了测试; 隐藏测试只取 PR 改过的 test_model.py |
 
 ## 顺序
@@ -68,6 +72,6 @@
 
 ## 局限
 
-- 真实的题目有 4 道 (cortex, gpuhunt, connect-eaas-core, maco). git 的全局配置给 github.com 设的代理没有运行; 按约定不修改全局配置, 在单条命令里用 `-c http.https://github.com.proxy=...` 临时改用环境里的代理就能连上. gpuhunt 的镜像先从 V0 的本地克隆建好, 再从 GitHub 核对过: PR #247 的 head 就是题目里的参考答案 0edc3126;
+- 真实的题目有 5 道 (cortex, gpuhunt, connect-eaas-core, maco, pyrolab). git 的全局配置给 github.com 设的代理没有运行; 按约定不修改全局配置, 在单条命令里用 `-c http.https://github.com.proxy=...` 临时改用环境里的代理就能连上. gpuhunt 的镜像先从 V0 的本地克隆建好, 再从 GitHub 核对过: PR #247 的 head 就是题目里的参考答案 0edc3126;
 - 构造的仓库很小, 也很"干净", 结果不能直接推广到真实的仓库;
 - 没有不带记忆的对照组 (用户的决定): 只分析记忆的行为, 不比较有无记忆的通过率.
