@@ -1,6 +1,7 @@
-# Bumpwise 自己的依赖 (目标仓库的依赖装在它们各自的虚拟环境里, 由准备流水线负责)
+# Bumpwise's own dependencies. Target repositories get their own virtual environments (see bumpwise/task/prepare.py).
+# Keep this file ASCII: pip reads it with the system encoding (GBK on Chinese Windows).
 anthropic>=1.13,<2
 pydantic>=2.11,<3
 python-dotenv>=1.0,<2
-# 测试
+# tests
 pytest>=8,<10
