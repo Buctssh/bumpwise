@@ -77,6 +77,9 @@ class AgentConfig:
     token_budget: int | None = None          # 设置了就覆盖题目里的 [budget]. None: 题目里的, 没有时用配置的默认值
     max_turns: int | None = None             # None: 用配置的值
     memory: bool = False                     # 用不用长期记忆 (经验卡片, V7). 默认不用: 消融实验的数据出来之前, 标准配置不变
+    # 只用这几张卡片, 不管它们的状态, 也不排除学到它的题目. **只用于验证一张新的卡片** (在学到它的题目上带着它重跑):
+    # 证明它是对的, agent 能照着做. 评测时绝对不能用它, 否则等于告诉了答案 (ADR-024)
+    memory_cards: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -232,7 +235,7 @@ def _run_agent(
     # 护栏有状态, 每次运行都新建
     guards = default_guards(agent_task.test_command, SCRATCH_DIR, agent.guards)
     # 长期记忆: 选出这次可以用的经验, 在工作区里匹配触发条件. 推送由护栏负责 (和其他护栏一样, 每次运行都新建)
-    session, memory_meta = _select_experience(env, agent_task, settings) if agent.memory else (None, None)
+    session, memory_meta = _select_experience(env, agent_task, settings, agent.memory_cards) if agent.memory else (None, None)
     if session is not None:
         guards.append(ExperienceGuard(session, agent_task.test_command))
     # 预算的优先级: 对照组 > 题目 > 配置的默认值. 记下来自哪里: 比较两次运行时, 预算不同也是一种"条件不同"
@@ -310,15 +313,18 @@ def _run_agent(
     )
 
 
-# 匹配触发条件时读取的文件: 太大的文件 (多半是数据或者生成的代码) 和二进制文件跳过
-_MAX_FILE_BYTES = 200_000
-
-
-def _select_experience(env: Environment, agent_task: AgentTask,
-                       settings: Settings) -> tuple[ExperienceSession | None, dict[str, Any]]:
-    """选出这次运行可以用的经验, 在工作区的文件里匹配触发条件. 返回 (一次运行的经验状态, 写进 meta 的内容)"""
+def _select_experience(env: Environment, agent_task: AgentTask, settings: Settings,
+                       forced: tuple[str, ...] | None = None) -> tuple[ExperienceSession | None, dict[str, Any]]:
+    """选出这次运行可以用的经验, 在工作区的文件里匹配触发条件. 返回 (一次运行的经验状态, 写进 meta 的内容).
+    forced: 验证一张卡片时, 只用指定的这几张 (见 AgentConfig.memory_cards)"""
     store = MemoryStore.load(settings.memories_dir)
     info: dict[str, Any] = {"version": store.version()}
+    if forced is not None:
+        cards = [card for card in (store.get(card_id) for card_id in forced) if card is not None]
+        matched, timed_out = match_cards(cards, record.workspace_files(env))
+        # 写明这是验证: 统计和评测时, 这次运行的结果不能当成"有记忆"那一组的成绩
+        info.update(forced=list(forced), candidates=[c.id for c in cards], timed_out=timed_out)
+        return ExperienceSession({c.id: c for c in cards}, matched), info
     if not (agent_task.from_version and agent_task.to_version):
         # --repo 方式的运行不知道依赖的确切版本, 选不出经验
         info["skipped"] = "不知道依赖的版本, 无法选择经验"
@@ -326,23 +332,9 @@ def _select_experience(env: Environment, agent_task: AgentTask,
     # 从这道题学到的经验, 不能用在这道题上 (ADR-024): 由代码强制执行
     cards = store.usable(agent_task.package, agent_task.from_version, agent_task.to_version,
                          exclude_tasks=[agent_task.task_id] if agent_task.task_id else ())
-    matched, timed_out = match_cards(cards, _workspace_files(env))
+    matched, timed_out = match_cards(cards, record.workspace_files(env))
     info.update(candidates=[c.id for c in cards], timed_out=timed_out)
     return ExperienceSession({c.id: c for c in cards}, matched), info
-
-
-def _workspace_files(env: Environment) -> list[tuple[str, str]]:
-    """工作区里被 git 跟踪的文本文件 (路径, 内容). 通过 env 读: 以后工作区在容器里, 这里不用改"""
-    files = []
-    for path in filter(None, record.git(env, "-c core.quotePath=false ls-files").splitlines()):
-        try:
-            data = env.read_bytes(path)
-        except (OSError, ValueError):
-            continue    # 文件被删掉了, 或者路径不合法
-        if len(data) > _MAX_FILE_BYTES or b"\x00" in data[:8192]:
-            continue
-        files.append((path, data.decode("utf-8", errors="replace")))
-    return files
 
 
 def _record_crash(trace: TraceWriter, meta: dict[str, Any], error: BaseException) -> None:

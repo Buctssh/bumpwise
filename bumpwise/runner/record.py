@@ -115,3 +115,22 @@ def workspace_diff(env: Environment, start_commit: str) -> str:
         result = env.exec(f'git -c core.quotePath=false diff --no-index -- /dev/null "{name}"', timeout=30)
         parts.append(result.output.rstrip())
     return "\n".join(p for p in parts if p) + "\n"
+
+
+# 读取工作区的文件时: 太大的文件 (多半是数据或者生成的代码) 和二进制文件跳过
+_MAX_FILE_BYTES = 200_000
+
+
+def workspace_files(env: Environment) -> list[tuple[str, str]]:
+    """工作区里被 git 跟踪的文本文件 (路径, 内容). 匹配经验的触发条件 (runner), 检查反思写出的触发条件 (learning) 都用它.
+    通过 env 读: 以后工作区在容器里, 这里不用改"""
+    files = []
+    for path in filter(None, git(env, "-c core.quotePath=false ls-files").splitlines()):
+        try:
+            data = env.read_bytes(path)
+        except (OSError, ValueError):
+            continue    # 文件被删掉了, 或者路径不合法
+        if len(data) > _MAX_FILE_BYTES or b"\x00" in data[:8192]:
+            continue
+        files.append((path, data.decode("utf-8", errors="replace")))
+    return files

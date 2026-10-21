@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import subprocess
 from pathlib import Path
@@ -268,8 +269,9 @@ def test_agent_config_controls_prompt_guards_budget_and_turns(settings, remote, 
     agent = AgentConfig(name="no-guards", system_prompt="system_v2", guards=(), token_budget=500_000, max_turns=7)
     outcome = run(settings, task, FakeLLM(reply("完成")), agent=agent)
     meta = load_meta(outcome)
-    assert meta["agent"] == {"name": "no-guards", "system_prompt": "system_v2", "guards": [],
-                             "token_budget": 500_000, "max_turns": 7, "memory": False}
+    # 记下的是整份配置 (以后 AgentConfig 新增字段, 这里不用跟着改)
+    assert meta["agent"] == json.loads(json.dumps(dataclasses.asdict(agent)))
+    assert meta["agent"]["name"] == "no-guards" and meta["agent"]["guards"] == []
     assert meta["prompts"]["system"]["name"] == "system_v2"
     assert meta["guards"] == []
     assert meta["budget"] == {"tokens": 500_000, "source": "agent"}     # 对照组的预算优先于题目的
