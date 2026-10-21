@@ -1,0 +1,46 @@
+# 题目: connect-eaas-core 从 pydantic 1 迁移到 pydantic 2 (真实的仓库, 可以提炼经验)
+# 来源: cloudblue/connect-eaas-core 的 PR #128 "LITE-33583: Migrate to pydantic v2". 找题的过程见 docs/v7/bank.md
+id = "connect-eaas-core-pydantic2"
+# 只给维护题库的人看, 不会发给 agent
+description = "CloudBlue Connect 扩展运行时的核心库: 大量 Optional 字段, 还用了 pydantic 1 的内部接口"
+
+[repo]
+url = "https://github.com/cloudblue/connect-eaas-core.git"
+base_commit = "25ab907b9a4b0adbf354db450b137e29312bcfd5"
+
+[environment]
+python = "3.12"
+# 项目用 poetry 管理依赖, 这里用 pip 装上运行测试需要的 (pyproject 的 test 组, 去掉了 flake8 这类代码检查工具)
+# typing-inspect: fastapi-utils 0.8 在 pydantic 2 下要用它, 却只写在它的 all 这组可选依赖里. 作者的 PR 也直接加上了它.
+# 这是环境的问题, 不是 pydantic 写法的迁移, 所以预先装好
+install = ['python -m pip install -e . "pytest>=6.1.2,<8" "pytest-cov>=2.10.1,<5" "pytest-mock>=3.14" "pytest-asyncio>=0.20.1,<0.21" "fs>=2.4.12" "responses>=0.14,<1" "pytest-httpx>=0.20" "Faker>=14.2,<15" "django-rql>=4.4" "typing-inspect>=0.9,<0.10"']
+
+[migration]
+package = "pydantic"
+from_version = "1.10.26"
+to_version = "2.14.1"
+target = ">=2,<3"
+# 排除 validators/test_base.py: 21 个测试比较的路径写死了 "/", 在 Windows 上 (v1 下也) 失败, 和迁移无关.
+# 去掉 test_proto.py 的一个测试: 它在测试里直接比较 "模型的列表 == 字典的列表", 只有 v1 下才成立 (model == dict),
+# agent 改代码改不了它. 作者的 PR 改了这个测试, 改过的版本在隐藏测试里, 同样的行为由隐藏测试检查
+test_command = "python -m pytest -q --ignore=tests/connect/eaas/core/validation/validators/test_base.py --deselect tests/connect/eaas/core/test_proto.py::test_deserialize_setup_request_message_with_vars_and_schedulables"
+
+[[migration.edits]]
+file = "pyproject.toml"
+old = 'pydantic = "^1.10"'
+new = 'pydantic = ">=2,<3"'
+
+# ============================================================================ 评测信息
+[evaluation]
+source = ["connect"]
+packages = ["connect.eaas.core"]
+# 不放 ".dict(": 会匹配到 unittest.mock 的 patch.dict( (参考答案里就有)
+forbidden = ["parse_obj(", "class Config:", "pydantic.utils", "__fields__"]
+pitfalls = ["optional-no-default", "pydantic-internal-api"]
+
+[evaluation.hidden_tests]
+# 参考答案: PR #128 的 head
+commit = "4fc81cca2a58306a6c05e55a1bb8043811f37bf3"
+# 只取 PR 改过的 3 个测试文件: 整个 tests 目录里有 test_base.py (见上面)
+paths = ["tests/connect/eaas/core/inject/test_common.py", "tests/connect/eaas/core/test_proto.py",
+         "tests/connect/eaas/core/validation/test_models.py"]
