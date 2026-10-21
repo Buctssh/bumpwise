@@ -151,3 +151,39 @@ def test_memory_is_off_by_default(settings, remote, monkeypatch):
     _, meta, task_message = run(settings, remote, FakeLLM(reply()), monkeypatch, memory=False)
     assert "memory" not in meta and "experience" not in meta["guards"] and "过去的经验" not in task_message
     assert meta["agent"]["memory"] is False
+
+
+def tool(name: str, call_id: str = "c1", **args) -> LLMResponse:
+    return LLMResponse(content=[{"type": "tool_use", "id": call_id, "name": name, "input": args}], stop_reason="tool_use")
+
+
+def test_dismiss_needs_evidence_end_to_end(settings, remote, monkeypatch):
+    # agent 先空口说无关 (被拒绝), 再执行验证, 用执行过的命令作为证据 (成功). 推送和检查清单都不再出现它
+    add_card(settings)
+    llm = FakeLLM(
+        tool("dismiss_experience", "c1", id="alias-card", reason="无关", evidence_command="python check.py"),
+        tool("run_command", "c2", command="git grep -n alias"),
+        tool("dismiss_experience", "c3", id="alias-card", reason="只有接口返回的数据用别名", evidence_command="git grep -n alias"),
+        tool("read_file", "c4", path="pkg/models.py"),
+        reply(),
+    )
+    _, meta, _ = run(settings, remote, llm, monkeypatch)
+    first = llm.calls[1][-1]["content"][0]
+    assert first["is_error"] and "没有执行过" in first["content"]
+    assert meta["memory"]["dismissed"]["alias-card"]["command"] == "git grep -n alias"
+    assert "pkg/models.py" in meta["memory"]["dismissed"]["alias-card"]["output"]
+    assert meta["memory"]["pushed"] == []                   # 去掉之后, 读到匹配的文件也不再推送
+
+
+def test_experience_tools_are_registered_only_with_candidates(settings, remote, monkeypatch):
+    seen: list = []
+
+    class Spy(FakeLLM):
+        def create(self, system, tools, messages, tool_choice="auto"):
+            seen.append({t["name"] for t in tools})
+            return super().create(system, tools, messages, tool_choice)
+
+    run(settings, remote, Spy(reply()), monkeypatch)                     # 没有任何卡片
+    add_card(settings)
+    run(settings, remote, Spy(reply()), monkeypatch)                     # 有可以用的卡片
+    assert "list_experience" not in seen[0] and {"list_experience", "recall_experience", "dismiss_experience"} <= seen[1]
