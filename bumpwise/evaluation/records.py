@@ -42,6 +42,8 @@ class RunRecord:
     harness: str                # harness 的 commit: 最终评测必须全部来自同一个版本 (ADR-020)
     prompt: str                 # system prompt 的名字和哈希的前 12 位
     duration_s: float | None    # 从开始到结束用了多少秒, 没有结束时间 (比如进程被强制终止) 时为 None
+    # 这次运行的经验 (V7): 版本号, 可以用的, 匹配上的, 推送, 查看, 去掉了哪些. 没有启用记忆时为 None
+    memory: dict[str, Any] | None = None
 
 
 def load_record(run_dir: Path) -> RunRecord:
@@ -77,6 +79,7 @@ def load_record(run_dir: Path) -> RunRecord:
         # 准备失败的运行没有 prompt, 只显示一个 ?
         prompt=f"{system['name']} {system.get('sha256', '')[:12]}" if system.get("name") else "?",
         duration_s=_duration(meta),
+        memory=meta.get("memory"),
     )
 
 

@@ -34,6 +34,7 @@ def build_report(records: Sequence[RunRecord], title: str, group_by: str = "arm"
     out += _comparison(groups)
     out += _per_task(groups)
     out += _checks(groups)
+    out += _experience(groups)
     out += _runs(records, key)
     return "\n".join(out).rstrip() + "\n"
 
@@ -53,6 +54,9 @@ def _caveats(records: Sequence[RunRecord], groups: dict[str, list[RunRecord]], n
     counts = pass_rate(records)[1]
     if counts[INVALID]:
         lines.append(f"{counts[INVALID]} 次运行无效 (准备失败, 崩溃, 调用模型失败, 被打断), 不计入通过率")
+    forced = sum(1 for r in records if r.memory and r.memory.get("forced"))
+    if forced:
+        lines.append(f"{forced} 次运行是验证经验用的 (只用指定的卡片, 而且是在学到它的题目上): 它们的成绩不能当成\"有记忆\"那一组的成绩")
     if counts[UNGRADED]:
         lines.append(f"{counts[UNGRADED]} 次运行没有评分, 不计入通过率. 用 grade 命令补上评分之后再生成报告")
     if not lines:
@@ -118,6 +122,37 @@ def _checks(groups: dict[str, list[RunRecord]]) -> list[str]:
             warns = sum(r.checks.get(check) == "warn" for r in graded)
             cells.append(f"{fails}/{len(graded)}" + (f" ({warns} warn)" if warns else "") if graded else "-")
         out.append(f"| {check} | " + " | ".join(cells) + " |")
+    return out + [""]
+
+
+def _experience(groups: dict[str, list[RunRecord]]) -> list[str]:
+    """每张经验卡片的统计, 以及需要人查看的信号 (ADR-024: 用监控代替逐条审核). 验证用的运行不算在内"""
+    records = [r for rs in groups.values() for r in rs if r.memory and not r.memory.get("forced")]
+    cards = sorted({card for r in records for card in r.memory.get("available", [])})
+    if not cards:
+        return []
+    out = ["## 经验", "",
+           "每张卡片在这些运行里: 可以用, 触发条件匹配上, 推送, 查看, 去掉了几次. \"用到了\": 推送过或者查看过, 并且没有被去掉.", "",
+           "| 卡片 | 可以用 | 匹配上 | 推送 | 查看 | 去掉 | 用到了时的通过率 | 没用到时的通过率 |",
+           "|---|---|---|---|---|---|---|---|"]
+    alerts = []
+    for card in cards:
+        available = [r for r in records if card in r.memory.get("available", [])]
+        dismissed = [r for r in available if card in r.memory.get("dismissed", {})]
+        used = [r for r in available if r not in dismissed
+                and (card in r.memory.get("pushed", []) or card in r.memory.get("recalled", []))]
+        unused = [r for r in available if r not in used]
+        out.append(f"| {card} | {len(available)} | {sum(card in r.memory.get('matched', {}) for r in available)} "
+                   f"| {sum(card in r.memory.get('pushed', []) for r in available)} "
+                   f"| {sum(card in r.memory.get('recalled', []) for r in available)} | {len(dismissed)} "
+                   f"| {pass_rate(used)[0]} | {pass_rate(unused)[0]} |")
+        # 最危险的信号: agent 去掉了一条经验, 而这次运行最后没有通过. 它可能判断错了, 这条经验其实是对的
+        for r in dismissed:
+            if outcome(r) == FAIL:
+                reason = r.memory["dismissed"][card].get("reason", "")
+                alerts.append(f"{card} 在 {r.run_id} 里被去掉了 (理由: {reason}), 而这次运行没有通过评分. agent 可能判断错了, 请人查看")
+    if alerts:
+        out += ["", "### 需要人查看", "", *[f"- {a}" for a in alerts]]
     return out + [""]
 
 
