@@ -179,6 +179,43 @@ def test_not_an_experiment_dir(env, tmp_path):
         env["run"](spec(), tmp_path)
 
 
+# ---------------------------------------------------------------- 续跑时 harness 的代码 (issue #4)
+
+def _recorded(tmp_path, harness):
+    from bumpwise.evaluation.spec import ExperimentSpec
+    import bumpwise.evaluation.batch as batch
+    spec = ExperimentSpec.model_validate({"id": "demo", "tasks": ["t"], "repeats": 1, "max_total_tokens": 1000,
+                                          "arms": [{"name": "a"}]})
+    (tmp_path / batch.EXPERIMENT_FILE).write_text(json.dumps({"experiment": spec.model_dump(), "harness": harness,
+                                                              "settings": {}, "started_at": "x"}), encoding="utf-8")
+    return spec
+
+
+@pytest.mark.parametrize("started, current, same", [
+    ({"commit": "a" * 40, "dirty": True}, {"commit": "a" * 40, "dirty": False}, False),          # 旧记录, 有改动 -> 没有
+    ({"commit": "a" * 40, "dirty": False}, {"commit": "a" * 40, "dirty": True}, False),          # 没有 -> 有改动
+    ({"commit": "a" * 40, "dirty": False}, {"commit": "a" * 40, "dirty": False}, True),          # 旧记录, 都干净
+    ({"commit": "a" * 40, "dirty": True, "fingerprint": "f1"}, {"commit": "a" * 40, "dirty": True, "fingerprint": "f2"}, False),  # 改动换了
+    ({"commit": "a" * 40, "dirty": True, "fingerprint": "f1"}, {"commit": "a" * 40, "dirty": True, "fingerprint": "f1"}, True),   # 同样的改动
+])
+def test_resume_compares_the_actual_code(tmp_path, monkeypatch, started, current, same):
+    import bumpwise.evaluation.batch as batch
+    spec = _recorded(tmp_path, started)
+    monkeypatch.setattr(runner_record, "harness_version", lambda: current)
+    if same:
+        batch._check_same_experiment(spec, tmp_path, False)
+    else:
+        with pytest.raises(BatchError, match="allow-version-change"):
+            batch._check_same_experiment(spec, tmp_path, False)
+        batch._check_same_experiment(spec, tmp_path, True)      # 明确允许时可以接着跑
+
+
+def test_fingerprint_follows_uncommitted_changes():
+    # 真实的仓库: 指纹由 commit 和未提交的改动决定, 同样的状态算两次, 结果一样
+    first, second = runner_record.harness_version(), runner_record.harness_version()
+    assert first["fingerprint"] == second["fingerprint"] and len(first["fingerprint"]) == 64
+
+
 # ---------------------------------------------------------------- 清单损坏 (issue #3)
 
 def _entry(run_id: str) -> str:

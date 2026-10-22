@@ -193,10 +193,22 @@ def _check_same_experiment(spec: ExperimentSpec, exp_dir: Path, allow_version_ch
     recorded = json.loads(path.read_text(encoding="utf-8"))
     if recorded["experiment"] != spec.model_dump():
         raise BatchError(f"实验文件 {spec.id} 在这次实验开始之后被改过了. 改过的实验请重新开始一次")
-    started, current = recorded["harness"]["commit"], run_record.harness_version()["commit"]
-    if started != current and not allow_version_change:
-        raise BatchError(f"harness 的版本变了 (开始时是 {started[:12]}, 现在是 {current[:12]}): 前后两部分的结果不能放在一起比较. "
-                         "确实要接着跑, 请加上 --allow-version-change")
+    started, current = recorded["harness"], run_record.harness_version()
+    if not _same_harness(started, current) and not allow_version_change:
+        raise BatchError(f"harness 的代码变了 (开始时是 {_describe(started)}, 现在是 {_describe(current)}): "
+                         "前后两部分的结果不能放在一起比较. 确实要接着跑, 请加上 --allow-version-change")
+
+
+def _same_harness(started: dict[str, Any], current: dict[str, Any]) -> bool:
+    """两次的代码是不是同一份. 有指纹时比较指纹; 旧的实验没有指纹, 只能比较 commit,
+    而且任何一边有未提交的改动都不算同一份: commit 代表不了那些改动 (issue #4)"""
+    if started.get("fingerprint") and current.get("fingerprint"):
+        return started["fingerprint"] == current["fingerprint"]
+    return started["commit"] == current["commit"] and not started.get("dirty") and not current.get("dirty")
+
+
+def _describe(version: dict[str, Any]) -> str:
+    return version["commit"][:12] + (" 加上未提交的改动" if version.get("dirty") else "")
 
 
 def _run_once(planned, task, arm, agent, attempt, index, total, spent, settings, create_llm, provider, base_python,

@@ -52,8 +52,9 @@ def test_settings_meta_is_a_whitelist():
 
 def test_harness_version():
     version = record.harness_version()
-    assert set(version) == {"commit", "dirty"}
-    assert version["commit"]
+    # fingerprint: 代码的实际内容, 续跑时比较它 (issue #4)
+    assert set(version) == {"commit", "dirty", "fingerprint"}
+    assert version["commit"] and len(version["fingerprint"]) == 64
 
 
 def test_test_and_result_meta():

@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from typing import Any
 
@@ -48,8 +49,29 @@ def harness_version() -> dict[str, Any]:
         except (OSError, subprocess.SubprocessError):
             return ""
 
-    # dirty: 有未提交的改动时, commit 不能完全代表这次运行用的代码
-    return {"commit": run("rev-parse", "HEAD") or "unknown", "dirty": bool(run("status", "--porcelain"))}
+    commit = run("rev-parse", "HEAD") or "unknown"
+    status = run("status", "--porcelain")
+    # dirty: 有未提交的改动时, commit 不能完全代表这次运行用的代码.
+    # fingerprint: 代码的实际内容 (commit + 未提交的改动 + 新文件的内容). 只看 dirty, 发现不了"改动换了一批" (issue #4).
+    # 被忽略的目录 (runs/, evals/, workspace/) 不在里面: 实验运行时往里写记录, 指纹不变
+    return {"commit": commit, "dirty": bool(status), "fingerprint": _fingerprint(commit, status)}
+
+
+def _fingerprint(commit: str, status: str) -> str:
+    digest = hashlib.sha256(f"{commit}\n{status}\n".encode("utf-8"))
+    try:
+        digest.update(subprocess.run(["git", "-C", str(PROJECT_ROOT), "diff", "HEAD", "--binary"],
+                                     capture_output=True, timeout=60).stdout)
+        untracked = subprocess.run(["git", "-C", str(PROJECT_ROOT), "ls-files", "--others", "--exclude-standard", "-z"],
+                                   capture_output=True, timeout=30).stdout.split(b"\0")
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    for name in sorted(filter(None, untracked)):
+        path = PROJECT_ROOT / name.decode("utf-8", errors="replace")
+        digest.update(name + b"\0")
+        if path.is_file():
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
 
 
 def settings_meta(settings: Settings) -> dict[str, Any]:
