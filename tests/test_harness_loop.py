@@ -179,6 +179,23 @@ def test_needs_human(make_loop):
     assert make_loop(llm).run("system", "任务").status is Status.NEEDS_HUMAN
 
 
+@pytest.mark.parametrize("first_line, expected", [
+    ("**需要人工处理**", True),
+    ("需要人工处理：依赖冲突无法解决", True),
+    ("结论: 需要人工处理", True),                    # system_v1/v2 的报告格式: "1. 结论: 已完成, 或者需要人工处理"
+    ("## 1. 结论：需要人工处理", True),
+    ("> 需要人工处理", True),
+    ("不需要人工处理，已经验证通过", False),          # issue #6
+    ("结论: 不需要人工处理", False),
+    ("没有需要人工处理的地方", False),
+    ("需要人工处理的地方已经处理完了", False),        # 标记后面紧跟着别的字, 不是标记
+    ("结论: 已完成", False),
+])
+def test_needs_human_mark(first_line, expected):
+    from bumpwise.harness.loop import _needs_human
+    assert _needs_human(f"{first_line}\n\n正文") is expected
+
+
 def test_needs_human_only_checks_first_line(make_loop):
     llm = FakeLLM(text("结论: 已完成\n没有需要人工处理的地方"))
     assert make_loop(llm).run("system", "任务").status is Status.FINISHED

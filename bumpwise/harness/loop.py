@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -33,6 +34,12 @@ from .policy import Action, Decision, Policy
 # 和 prompts/system_v1.md, system_v2.md 的约定一致: 需要人处理时, 最终回复的第一行写这几个字.
 # system_v3 改用 escalate 工具 (控制信号), 这个文字标记保留, 用于兼容旧的 prompt
 NEEDS_HUMAN_MARK = "需要人工处理"
+# 第一行去掉 Markdown 的修饰 (#, >, *, _, `, -), 编号 (1.) 和"结论:"以后, 以这个标记开头, 并且后面是标点, 空白或者行尾.
+# 以前只看第一行里有没有这几个字, "不需要人工处理" 也会命中 (issue #6). "结论:" 来自 system_v1/v2 的报告格式
+# ("1. 结论: 已完成, 或者需要人工处理"), 这种写法要能认出来
+_NEEDS_HUMAN_LINE = re.compile(
+    r"^[\s#>*_`\-]*(?:\d+[.、)]\s*)?(?:结论\s*[:：]\s*)?[*_`]*" + re.escape(NEEDS_HUMAN_MARK)
+    + r"(?=$|[\s*_`:：,，。.!！;；(（])")
 
 # 护栏说的话都带上这个前缀: 仓库的内容和命令输出是数据, 护栏的提醒来自 harness 本身, 两者要能区分开
 GUARD_PREFIX = "[harness 护栏]"
@@ -435,10 +442,10 @@ def _truncated_content(response: LLMResponse) -> list[dict[str, Any]]:
 
 
 def _needs_human(text: str) -> bool:
-    """第一行非空的文字里有'需要人工处理'. 只看第一行, 正文里提到这几个字不算"""
+    """第一行非空的文字以'需要人工处理'开头 (允许 Markdown 的修饰, 编号, "结论:"). 只看第一行, 正文里提到这几个字不算"""
     for line in text.splitlines():
         if line.strip():
-            return NEEDS_HUMAN_MARK in line
+            return bool(_NEEDS_HUMAN_LINE.match(line.strip()))
     return False
 
 
