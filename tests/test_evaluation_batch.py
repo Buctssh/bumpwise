@@ -177,3 +177,33 @@ def test_changed_harness_cannot_be_resumed_without_permission(env, monkeypatch):
 def test_not_an_experiment_dir(env, tmp_path):
     with pytest.raises(BatchError, match="不是一次实验的目录"):
         env["run"](spec(), tmp_path)
+
+
+# ---------------------------------------------------------------- 清单损坏 (issue #3)
+
+def _entry(run_id: str) -> str:
+    from bumpwise.evaluation.batch import Entry
+    import dataclasses as dc
+    return json.dumps(dc.asdict(Entry(task_id="t", arm="a", repeat=1, attempt=1, run_id=run_id, status="finished",
+                                      verdict="pass", tokens=10)), ensure_ascii=False)
+
+
+def test_truncated_last_line_is_ignored_with_a_warning(tmp_path):
+    (tmp_path / MANIFEST_FILE).write_text(_entry("r1") + "\n" + _entry("r2")[:20], encoding="utf-8")
+    with pytest.warns(UserWarning, match="最后一行不完整"):
+        assert [e.run_id for e in load_entries(tmp_path)] == ["r1"]
+
+
+def test_damaged_middle_line_still_fails(tmp_path):
+    # 中间的行损坏不是"写到一半", 不能悄悄跳过
+    (tmp_path / MANIFEST_FILE).write_text(_entry("r1")[:20] + "\n" + _entry("r2") + "\n", encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError):
+        load_entries(tmp_path)
+
+
+def test_append_after_a_truncated_line_keeps_the_manifest_readable(tmp_path):
+    # 续跑时追加新的一行: 先截掉写到一半的那一行, 否则新的一行会接在它后面
+    from bumpwise.evaluation.batch import Entry, _append
+    (tmp_path / MANIFEST_FILE).write_text(_entry("r1") + "\n" + _entry("r2")[:20], encoding="utf-8")
+    _append(tmp_path, Entry(task_id="t", arm="a", repeat=2, attempt=1, run_id="r3", status="finished", verdict="pass", tokens=10))
+    assert [e.run_id for e in load_entries(tmp_path)] == ["r1", "r3"]

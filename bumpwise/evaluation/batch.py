@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
+import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -107,13 +109,23 @@ def new_experiment_dir(spec: ExperimentSpec, settings: Settings) -> Path:
 
 
 def load_entries(exp_dir: Path) -> list[Entry]:
+    """读取清单. 最后一行不完整 (写到一半时进程被强制终止) 时, 忽略这一行并给出警告; 中间的行损坏时报错, 不悄悄丢数据.
+    和运行轨迹的 load_events 是同一个策略 (issue #3)"""
     path = Path(exp_dir) / MANIFEST_FILE
     if not path.is_file():
         return []
     entries = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        try:
             entries.append(Entry(**json.loads(line)))
+        except (json.JSONDecodeError, TypeError):
+            if i == len(lines) - 1:
+                warnings.warn(f"{path} 的最后一行不完整, 已忽略 (多半是写到一半时进程被终止了): {line[:80]}", stacklevel=2)
+                break
+            raise
     return entries
 
 
@@ -226,6 +238,19 @@ def _tokens(outcome: Any) -> int:
 
 def _append(exp_dir: Path, entry: Entry) -> None:
     # 追加一行, 立刻写到磁盘: 崩溃时, 已经完成的运行都在清单里
-    with open(exp_dir / MANIFEST_FILE, "a", encoding="utf-8", newline="\n") as f:
+    path = exp_dir / MANIFEST_FILE
+    _drop_partial_line(path)
+    with open(path, "a", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(dataclasses.asdict(entry), ensure_ascii=False) + "\n")
         f.flush()
+        os.fsync(f.fileno())    # flush 只到操作系统的缓冲区; 断电时要靠 fsync 才真正写到磁盘 (issue #3)
+
+
+def _drop_partial_line(path: Path) -> None:
+    """上一次写到一半的最后一行 (没有换行符) 截掉. 不截掉的话, 续跑追加的新一行会接在它后面, 变成中间损坏的一行"""
+    if not path.is_file():
+        return
+    data = path.read_bytes()
+    if data and not data.endswith(b"\n"):
+        with open(path, "r+b") as f:
+            f.truncate(data.rfind(b"\n") + 1)
