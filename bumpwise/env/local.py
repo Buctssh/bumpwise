@@ -143,6 +143,7 @@ class LocalEnvironment:
         2. 把目标venv的bin目录放到PATH最前面,优先使用虚拟环境内程序
         3. 设置VIRTUAL_ENV标记虚拟环境
         4. 强制Python IO为UTF-8,解决Windows中文乱码
+        5. 不写字节码 (__pycache__): 否则跑一次测试, 工作区里就多出一批未跟踪的文件 (issue #1)
         """
         # 过滤密钥相关环境变量
         env = {k: v for k, v in os.environ.items() if not any(m in k.upper() for m in _SECRET_MARKERS)}
@@ -154,6 +155,10 @@ class LocalEnvironment:
         # 强制utf8编码
         env["PYTHONUTF8"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
+        # 不写字节码. 不设的话, agent 或评分跑一次测试, tests/__pycache__ 就出现在工作区里: 评分会把它当成"改动了测试",
+        # diff.patch 和事后补评分时的工作区也对不上. 以前的实验都是在设了这个变量的环境里跑的 (继承自启动 bumpwise 的进程),
+        # 现在由这里明确规定, 不再依赖启动它的环境 (issue #1)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
 
         # 告诉常见工具不要等待用户输入,需要输入时直接报错退出,而不是卡住等待超时
         env["GIT_TERMINAL_PROMPT"] = "0"        # git 需要用户名或密码时,直接失败, 不弹出输入提示

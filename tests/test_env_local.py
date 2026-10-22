@@ -109,6 +109,13 @@ def test_exec_disables_interactive_prompts(env):
     assert result.output.split() == ["0", "1"]
 
 
+def test_exec_does_not_write_bytecode(env, monkeypatch):
+    # issue #1: 不管启动 bumpwise 的环境怎样设置, 子进程都不写 __pycache__
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
+    result = env.exec('python -c "import sys; print(sys.flags.dont_write_bytecode)"', timeout=30)
+    assert result.output.strip() == "1"
+
+
 def test_describe_reports_os_and_shell(env):
     info = env.describe()
     if sys.platform == "win32":

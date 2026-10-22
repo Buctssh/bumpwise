@@ -205,7 +205,10 @@ def check_change_scope(env: Environment, start_commit: str, evaluation: Evaluati
     head = _git(env, "rev-parse HEAD").strip()
     changed = _git(env, f"diff --name-only {start_commit}").splitlines()
     changed += _git(env, "ls-files --others --exclude-standard").splitlines()
-    changed = sorted({f.strip() for f in changed if f.strip()})
+    # 运行时生成的文件 (字节码) 不是 agent 的改动. 不能只靠目标仓库的 .gitignore: 构造的题目就没有 .gitignore,
+    # tests/__pycache__ 会被当成"改动了测试" (issue #1)
+    artifacts = [f for f in changed if _is_runtime_artifact(f)]
+    changed = sorted({f.strip() for f in changed if f.strip() and f not in artifacts})
 
     problems = [f"运行过程中产生了提交 (HEAD 是 {head[:12]}, 起点是 {start_commit[:12]})"] if head != start_commit else []
     problems += [f"改动了测试: {f}" for f in changed if _TEST_RULE.matches(path_parts(f))]
@@ -213,12 +216,18 @@ def check_change_scope(env: Environment, start_commit: str, evaluation: Evaluati
     problems += [f"改动了 CI 配置: {f}" for f in changed if _is_ci_file(f)]
     sources = [s.strip("/").replace("\\", "/") + "/" for s in evaluation.source]
     outside = [f for f in changed if not any(f.startswith(s) for s in sources) and not any(f in p for p in problems)]
-    data = {"changed_files": len(changed), "outside_source": len(outside)}
+    data = {"changed_files": len(changed), "outside_source": len(outside), "ignored_artifacts": len(artifacts)}
     if problems:
         return CheckResult("change_scope", FAIL, f"有 {len(problems)} 处不允许的改动", problems + outside, data)
     if outside:
         return CheckResult("change_scope", WARN, f"{len(outside)} 个改动的文件不在源代码目录里", outside, data)
     return CheckResult("change_scope", PASS, f"改动了 {len(changed)} 个文件, 都在源代码目录里", data=data)
+
+
+def _is_runtime_artifact(path: str) -> bool:
+    """Python 运行时生成的字节码: __pycache__ 目录下的文件, 或者 .pyc / .pyo"""
+    parts = path.strip().replace("\\", "/").split("/")
+    return "__pycache__" in parts or parts[-1].endswith((".pyc", ".pyo"))
 
 
 def _is_dependency_file(path: str) -> bool:

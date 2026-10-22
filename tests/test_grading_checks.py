@@ -271,6 +271,16 @@ def test_commit_during_the_run_fails(repo):
     assert result.status == FAIL and "产生了提交" in result.details[0]
 
 
+def test_bytecode_is_not_a_change(repo):
+    # issue #1: 跑一次测试就会生成 tests/__pycache__, 构造的题目没有 .gitignore. 它不是 agent 的改动, 更不是"改动了测试"
+    root, start = repo
+    for path in ("tests/__pycache__/test_a.cpython-312-pytest-9.1.1.pyc", "demo/__pycache__/models.cpython-312.pyc", "demo/old.pyc"):
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_bytes(b"\x00")
+    result = check_change_scope(LocalEnvironment(root), start, EVALUATION)
+    assert result.status == PASS and result.data["changed_files"] == 0 and result.data["ignored_artifacts"] == 3
+
+
 def test_changes_outside_source_are_a_warn(repo):
     root, start = repo
     (root / "README.md").write_text("updated\n", encoding="utf-8")
