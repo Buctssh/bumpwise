@@ -74,6 +74,23 @@ def _encode(text: str, uses_crlf: bool) -> bytes:
     return text.encode("utf-8")
 
 
+def _mostly_crlf(text: str) -> bool:
+    """文件里的换行大部分是 \r\n 吗. write_file 整个覆盖文件时用它决定换行符: 以前只要出现过一次 \r\n 就全部用 \r\n (issue #5)"""
+    crlf = text.count("\r\n")
+    return crlf > 0 and crlf >= text.count("\n") - crlf
+
+
+def _normalized_positions(text: str) -> list[int]:
+    """把 \r\n 换成 \n 之后, 每个字符在原文里的位置 (最后再加上原文的长度, 方便取区间的结尾)"""
+    positions = []
+    for i, ch in enumerate(text):
+        if ch == "\r" and text.startswith("\n", i + 1):
+            continue
+        positions.append(i)
+    positions.append(len(text))
+    return positions
+
+
 # 加上行号
 def _numbered(lines: list[str], first_line_no: int) -> str:
     return "\n".join(f"{no:>6}\t{line}" for no, line in enumerate(lines, start=first_line_no))
@@ -167,10 +184,10 @@ class EditFileParams(ToolParams):
 
 
 def edit_file(args: EditFileParams, ctx: ToolContext) -> str:
-    text = _decode_strict(_read_existing(ctx, args.path), args.path)
+    original = _decode_strict(_read_existing(ctx, args.path), args.path)
 
-    uses_crlf = "\r\n" in text
-    text = text.replace("\r\n", "\n")
+    # 在把 \r\n 统一成 \n 的文本上匹配: 文件用 \r\n, 模型给的 old_str 只用 \n, 也要能匹配
+    text = original.replace("\r\n", "\n")
     old = args.old_str.replace("\r\n", "\n")
     new = args.new_str.replace("\r\n", "\n")
 
@@ -191,10 +208,21 @@ def edit_file(args: EditFileParams, ctx: ToolContext) -> str:
         )
 
     # 文件系统不支持“只改中间一段”，所以写回的是整个文件的内容，
-    # 只是除了被替换的这一段，其余部分和原来一模一样
+    # 只是除了被替换的这一段，其余部分和原来一模一样：把匹配的位置换算回原文，只替换那一段，其余的字节原样写回.
+    # 以前先把整个文件统一成 \n 再写回, 混合换行符的文件会被整个改成 \r\n (issue #5)
     start = text.index(old)
+    positions = _normalized_positions(original)
+    # 结尾取"匹配到的最后一个字符的下一个位置", 不能取"下一个字符的位置": 下一个字符是 \n 时, 它前面的 \r 会被算进替换的区间
+    begin, finish = positions[start], positions[start + len(old) - 1] + 1
+    replaced = original[begin:finish]
+    # 新内容的换行符和被替换的那一段一致; 那一段里没有换行时, 和它所在的那一行一致
+    if "\n" in replaced:
+        segment_crlf = "\r\n" in replaced
+    else:
+        line_end = original.find("\n", finish)
+        segment_crlf = line_end > 0 and original[line_end - 1] == "\r"
+    _write(ctx, args.path, (original[:begin] + _encode(new, segment_crlf).decode("utf-8") + original[finish:]).encode("utf-8"))
     text = text[:start] + new + text[start + len(old) :]
-    _write(ctx, args.path, _encode(text, uses_crlf))
 
     # 返回修改处前后几行：只看改动本身没法判断改得对不对，比如缩进错了、改错了位置
     lines = text.split("\n")
@@ -227,7 +255,7 @@ class WriteFileParams(ToolParams):
 def write_file(args: WriteFileParams, ctx: ToolContext) -> str:
     # 覆盖已有文件时沿用它原来的换行符，和 edit_file 的规则一致；新建文件使用 \n
     existing = _read_if_exists(ctx, args.path)
-    uses_crlf = existing is not None and b"\r\n" in existing
+    uses_crlf = existing is not None and _mostly_crlf(existing.decode("utf-8", errors="replace"))
     content = args.content.replace("\r\n", "\n")
 
     _write(ctx, args.path, _encode(content, uses_crlf))

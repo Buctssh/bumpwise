@@ -154,6 +154,27 @@ def test_edit_keeps_crlf_even_if_model_uses_lf(ctx, tools):
     assert ctx.env.read_bytes("m.py") == b"a = 1\r\nb = 20\r\nc = 3\r\n"
 
 
+def test_edit_keeps_mixed_line_endings(ctx, tools):
+    # issue #5: 只有 b 那一行是 \r\n. 编辑 b 以后, a 和 c 的换行符不变
+    write(ctx, "mixed.txt", b"a = 1\nb = 2\r\nc = 3\n")
+    assert not tools.execute("edit_file", {"path": "mixed.txt", "old_str": "b = 2", "new_str": "b = 20"}, ctx).is_error
+    assert ctx.env.read_bytes("mixed.txt") == b"a = 1\nb = 20\r\nc = 3\n"
+
+
+def test_edit_across_lines_in_a_mixed_file(ctx, tools):
+    # 跨两行的替换: 新内容用被替换的那一段的换行符, 其余的行不变
+    write(ctx, "mixed.txt", b"x\na = 1\r\nb = 2\r\nc\n")
+    result = tools.execute("edit_file", {"path": "mixed.txt", "old_str": "a = 1\nb = 2", "new_str": "a = 10\nb = 20"}, ctx)
+    assert not result.is_error
+    assert ctx.env.read_bytes("mixed.txt") == b"x\na = 10\r\nb = 20\r\nc\n"
+
+
+def test_edit_keeps_lf_file(ctx, tools):
+    write(ctx, "m.py", b"a = 1\nb = 2\n")
+    tools.execute("edit_file", {"path": "m.py", "old_str": "a = 1\nb = 2", "new_str": "a = 1\nb = 3"}, ctx)
+    assert ctx.env.read_bytes("m.py") == b"a = 1\nb = 3\n"
+
+
 def test_edit_same_old_and_new_is_reported(ctx, tools):
     write(ctx, "m.py", b"x = 1\n")
     result = tools.execute("edit_file", {"path": "m.py", "old_str": "x = 1", "new_str": "x = 1"}, ctx)
@@ -183,6 +204,13 @@ def test_write_overwrite_keeps_crlf(ctx, tools):
     result = tools.execute("write_file", {"path": "m.py", "content": "new\nline\n"}, ctx)
     assert "覆盖" in result.content
     assert ctx.env.read_bytes("m.py") == b"new\r\nline\r\n"
+
+
+def test_write_overwrite_uses_the_majority_line_ending(ctx, tools):
+    # 整个覆盖时没法逐行保留: 用原文件里占多数的换行符 (以前只要有一个 \r\n 就全部用 \r\n)
+    write(ctx, "m.py", b"a\nb\nc\r\n")
+    tools.execute("write_file", {"path": "m.py", "content": "x\ny\n"}, ctx)
+    assert ctx.env.read_bytes("m.py") == b"x\ny\n"
 
 
 def test_write_misspelled_param_is_rejected(ctx, tools):
