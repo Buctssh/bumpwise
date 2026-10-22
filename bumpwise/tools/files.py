@@ -8,6 +8,11 @@ from .base import Tool, ToolContext, ToolError, ToolParams
 
 _BINARY_SNIFF_BYTES = 8192  # 判断是否为二进制文件时，检查开头的多少个字节
 _LINE_NO_WIDTH = 8          # 每行的行号和制表符大约占用的字符数，用来估算输出的长度
+# read_file 最多读入多少字节：更大的文件不整个读进内存，提示用命令查看其中的一部分。
+# 暂定 (ADR-018)：已有的 306 次 read_file 里还没有遇到过这么大的文件
+_MAX_READ_BYTES = 2_000_000
+# 开头的说明（路径、行数）和结尾的提示要占的字符数：它们也算在 max_output_chars 里 (issue #2)
+_RESERVED_CHARS = 300
 _SNIPPET_CONTEXT = 3        # edit_file 修改后，显示修改处前后各几行（和 git diff 默认的上下文行数一致）
 
 
@@ -24,9 +29,10 @@ def _directory_message(path: str) -> str:
 
 
 # 存在就读，不存在返回 None，不报错
-def _read_if_exists(ctx: ToolContext, path: str) -> bytes | None:
+def _read_if_exists(ctx: ToolContext, path: str, max_bytes: int | None = None) -> bytes | None:
     try:
-        return ctx.env.read_bytes(path)
+        # 只在需要时传 max_bytes: 没有这个参数的 Environment 实现照样能用
+        return ctx.env.read_bytes(path) if max_bytes is None else ctx.env.read_bytes(path, max_bytes=max_bytes)
     except FileNotFoundError:
         return None
     except PathOutsideWorkdir:
@@ -36,9 +42,9 @@ def _read_if_exists(ctx: ToolContext, path: str) -> bytes | None:
 
 
 # 必须存在，不存在直接抛 ToolError
-def _read_existing(ctx: ToolContext, path: str) -> bytes:
+def _read_existing(ctx: ToolContext, path: str, max_bytes: int | None = None) -> bytes:
     """读取一个必须存在的文件"""
-    data = _read_if_exists(ctx, path)
+    data = _read_if_exists(ctx, path, max_bytes)
     if data is None:
         raise ToolError(f"文件不存在：{path}。可以用 run_command 工具执行 git ls-files 查看仓库里有哪些文件。")
     return data
@@ -83,7 +89,11 @@ class ReadFileParams(ToolParams):
 
 
 def read_file(args: ReadFileParams, ctx: ToolContext) -> str:
-    data = _read_existing(ctx, args.path)
+    data = _read_existing(ctx, args.path, _MAX_READ_BYTES)
+    if len(data) > _MAX_READ_BYTES:
+        # 不整个读进内存再截断 (issue #2)
+        raise ToolError(f"{args.path} 超过 {_MAX_READ_BYTES // 1_000_000} MB，太大了，无法整个读取。"
+                        "可以用 run_command 查看其中的一部分，例如用 git grep -n 搜索需要的内容。")
 
     # 开头的 8KB 里出现了空字节(\x00)，基本可以判断是二进制文件
     if b"\x00" in data[:_BINARY_SNIFF_BYTES]:
@@ -100,11 +110,18 @@ def read_file(args: ReadFileParams, ctx: ToolContext) -> str:
     if end < args.start_line:
         raise ToolError(f"end_line={args.end_line} 不能小于 start_line={args.start_line}。")
 
-    # 截断位置一定在某一行的末尾，至少保证有一行
+    # 截断位置一般在某一行的末尾。第一行本身就超过上限时 (压缩过的 JSON, 生成的代码), 只显示这一行的开头:
+    # 以前第一行总是完整地显示, 一行几 MB 的文件会整个返回 (issue #2)
+    budget = max(ctx.max_output_chars - _RESERVED_CHARS, _LINE_NO_WIDTH + 1)
     shown: list[str] = []
     size = 0
+    cut = None      # 第一行被截断时: (这一行的字符数, 显示了多少个字符)
     for line in lines[args.start_line - 1 : end]:
-        if shown and size + len(line) + _LINE_NO_WIDTH > ctx.max_output_chars:
+        if size + len(line) + _LINE_NO_WIDTH > budget:
+            if not shown:
+                keep = budget - _LINE_NO_WIDTH
+                shown.append(line[:keep])
+                cut = (len(line), keep)
             break
         shown.append(line)
         size += len(line) + _LINE_NO_WIDTH
@@ -112,6 +129,9 @@ def read_file(args: ReadFileParams, ctx: ToolContext) -> str:
 
     result = f"{args.path}（共 {total} 行，显示第 {args.start_line}-{last} 行）\n"
     result += _numbered(shown, args.start_line)
+    if cut is not None:
+        result += (f"\n[第 {last} 行有 {cut[0]} 个字符，太长，只显示了前 {cut[1]} 个。"
+                   "可以用 run_command 查看这一行的其他部分。]")
 
     # 注意这里的参数名必须和 ReadFileParams 完全一致：模型会照着这句话去调用
     if last < end:

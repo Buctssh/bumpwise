@@ -43,13 +43,16 @@ class LocalEnvironment:
             raise PathOutsideWorkdir(f"路径 {path} 不在工作目录之内")
         return target
 
-    def read_bytes(self, path: str) -> bytes:
+    def read_bytes(self, path: str, max_bytes: int | None = None) -> bytes:
         target = self._resolve(path)
         if not target.exists():
             raise FileNotFoundError(path)
         if target.is_dir():
             raise IsADirectoryError(path)
-        return target.read_bytes()
+        if max_bytes is None:
+            return target.read_bytes()
+        with open(target, "rb") as f:
+            return f.read(max_bytes + 1)
 
     def write_bytes(self, path: str, data: bytes) -> None:
         target = self._resolve(path)

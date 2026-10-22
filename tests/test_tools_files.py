@@ -57,6 +57,33 @@ def test_read_long_file_tells_where_to_continue(ctx, tools):
     assert f"显示第 {next_line}-" in second.content
 
 
+def test_read_single_long_line_is_cut(ctx, tools):
+    # issue #2: 只有一行, 5000 个字符, 上限 1000. 以前第一行总是完整地返回
+    write(ctx, "long.json", b"x" * 5000 + b"\n")
+    result = tools.execute("read_file", {"path": "long.json"}, ctx)
+    assert not result.is_error and len(result.content) <= 1000
+    assert "第 1 行有 5000 个字符" in result.content and "只显示了前" in result.content
+
+
+def test_read_long_first_line_then_continue(ctx, tools):
+    # 第一行太长被截断以后, 依然提示从下一行继续读
+    write(ctx, "mixed.txt", b"y" * 3000 + b"\nshort\n")
+    result = tools.execute("read_file", {"path": "mixed.txt"}, ctx)
+    assert len(result.content) <= 1000 and "可以设置 start_line=2" in result.content
+
+
+def test_read_huge_file_is_refused_without_loading_it(ctx, tools, monkeypatch):
+    # 超过上限的文件不整个读进内存: env 只被要求读上限 + 1 个字节
+    import bumpwise.tools.files as files
+    monkeypatch.setattr(files, "_MAX_READ_BYTES", 100)
+    write(ctx, "huge.txt", b"z\n" * 1000)
+    asked = []
+    original = ctx.env.read_bytes
+    monkeypatch.setattr(ctx.env, "read_bytes", lambda path, max_bytes=None: asked.append(max_bytes) or original(path, max_bytes=max_bytes))
+    result = tools.execute("read_file", {"path": "huge.txt"}, ctx)
+    assert result.is_error and "太大了" in result.content and asked == [100]
+
+
 def test_read_missing_file_suggests_next_step(ctx, tools):
     result = tools.execute("read_file", {"path": "nope.py"}, ctx)
     assert result.is_error

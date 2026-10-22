@@ -38,11 +38,12 @@ class Environment(Protocol):
         """在工作目录下执行一个命令,超时时终止命令以及它启动的所有子进程"""
         ...
 
-    def read_bytes(self, path: str) -> bytes:
+    def read_bytes(self, path: str, max_bytes: int | None = None) -> bytes:
         """读取工作目录中的一个文件
 
         路径越出工作目录时抛出 PathOutsideWorkdir,
         文件不存在时抛出 FileNotFoundError,是目录时抛出 IsADirectoryError,
+        max_bytes: 最多读多少个字节 (多读 1 个, 调用方据此判断文件是不是比上限大). 不把超大的文件整个读进内存
         """
         ...
 

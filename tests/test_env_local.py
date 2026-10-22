@@ -132,6 +132,13 @@ def test_write_then_read(env):
     assert env.read_bytes("a/b/c.txt") == b"hello\r\n"  # 原样读写，换行符不变
 
 
+def test_read_with_max_bytes_reads_one_byte_more(env):
+    # issue #2: 调用方用多出来的 1 个字节判断文件比上限大, 而不用把整个文件读进来
+    env.write_bytes("big.txt", b"x" * 1000)
+    assert env.read_bytes("big.txt", max_bytes=10) == b"x" * 11
+    assert env.read_bytes("big.txt", max_bytes=5000) == b"x" * 1000
+
+
 def test_write_leaves_no_temp_file(env, tmp_path):
     # 原子写入用的临时文件，替换完成后不应该残留
     env.write_bytes("m.py", b"old")
